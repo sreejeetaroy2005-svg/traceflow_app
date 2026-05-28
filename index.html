@@ -675,8 +675,47 @@ function navigateTo(page) {
   if(page==='stakeholders') initStakeholders();
 }
 
+// ─── API LAYER ────────────────────────────────────────────────────────────────
+const API_BASE = 'http://localhost:3001';
+let API_ONLINE = false;
+
+async function apiFetch(path) {
+  try {
+    const r = await fetch(API_BASE + path);
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+async function apiPost(path, body) {
+  try {
+    const r = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+async function checkApi() {
+  const h = await apiFetch('/health');
+  API_ONLINE = !!(h && h.status === 'ok');
+  const dot = document.querySelector('.sb-dot');
+  if (dot) dot.style.background = API_ONLINE ? 'var(--green)' : 'var(--red)';
+  const footer = document.querySelector('.sb-footer-text');
+  if (footer) footer.textContent = API_ONLINE ? 'Network: Live' : 'Network: Offline';
+  return API_ONLINE;
+}
+
 // ─── LOADER ───────────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  await checkApi();
   setTimeout(() => {
     document.getElementById('loader').classList.add('hidden');
     initOverview();
@@ -726,15 +765,30 @@ function drawSparkline(canvasId, color) {
 }
 
 // ─── OVERVIEW ─────────────────────────────────────────────────────────────────
-function initOverview() {
-  animateCounter('kpi-batches',128447,1200);
-  animateCounter('kpi-workers',3842,1000);
-  animateCounter('kpi-material',847,800);
-  animateCounter('kpi-tx',294118,1400);
+async function initOverview() {
   drawSparkline('spark-0','#f59e0b');
   drawSparkline('spark-1','#2dd4bf');
   drawSparkline('spark-2','#a78bfa');
   drawSparkline('spark-3','#60a5fa');
+
+  if (API_ONLINE) {
+    const data = await apiFetch('/api/analytics/dashboard');
+    if (data) {
+      animateCounter('kpi-batches', data.totalBatches, 1200);
+      animateCounter('kpi-workers', data.activeWorkers, 1000);
+      animateCounter('kpi-material', Math.round(data.weightToday), 800);
+      animateCounter('kpi-tx', data.totalTx, 1400);
+      drawDonutFromData(data.matBreakdown);
+      renderCityTableFromData(data.cityStats);
+      startTxFeedFromApi();
+      return;
+    }
+  }
+  // fallback to mock
+  animateCounter('kpi-batches',128447,1200);
+  animateCounter('kpi-workers',3842,1000);
+  animateCounter('kpi-material',847,800);
+  animateCounter('kpi-tx',294118,1400);
   drawDonut();
   renderCityTable();
   startTxFeed();
@@ -772,6 +826,101 @@ function drawDonut() {
   });
   const leg = document.getElementById('donut-legend');
   leg.innerHTML = data.map(d=>`<div style="display:flex;align-items:center;gap:.35rem"><span style="width:8px;height:8px;border-radius:50%;background:${d.c};flex-shrink:0"></span><span style="color:var(--text-secondary)">${d.l}</span><span class="mono" style="margin-left:auto;font-size:.72rem">${d.v}%</span></div>`).join('');
+}
+
+// ─── DONUT FROM API ───────────────────────────────────────────────────────────
+function drawDonutFromData(matBreakdown) {
+  const COLORS = {'PET Bottles':'#60a5fa','HDPE Plastic':'#a78bfa','Cardboard':'#f59e0b','E-Waste':'#f87171','Glass':'#2dd4bf','Metal Scrap':'#4ade80'};
+  const total = matBreakdown.reduce((s,m)=>s+(m.kg||0),0);
+  const data = matBreakdown.map(m=>({l:m.material,v:total?Math.round(m.kg/total*100):0,c:COLORS[m.material]||'#8b949e'}));
+  const c = document.getElementById('donut-chart');
+  const ctx = c.getContext('2d');
+  const cx=90,cy=90,r=70,ir=45;
+  let angle=-Math.PI/2;
+  ctx.clearRect(0,0,180,180);
+  data.forEach(d => {
+    const slice=(d.v/100)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,angle,angle+slice); ctx.closePath();
+    ctx.fillStyle=d.c; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx,cy,ir,0,Math.PI*2); ctx.fillStyle='#161b22'; ctx.fill();
+    angle+=slice;
+  });
+  // update center label
+  const center = document.querySelector('#donut-chart + div div:first-child');
+  if(center) center.textContent = Math.round(total)+'T';
+  document.getElementById('donut-legend').innerHTML = data.map(d=>`<div style="display:flex;align-items:center;gap:.35rem"><span style="width:8px;height:8px;border-radius:50%;background:${d.c};flex-shrink:0"></span><span style="color:var(--text-secondary)">${d.l}</span><span class="mono" style="margin-left:auto;font-size:.72rem">${d.v}%</span></div>`).join('');
+}
+
+// ─── CITY TABLE FROM API ──────────────────────────────────────────────────────
+function renderCityTableFromData(cityStats) {
+  const NODE_MAP = {Mumbai:12,Delhi:10,Bengaluru:8,Chennai:7,Hyderabad:6,Pune:5,Ahmedabad:4,Kolkata:6};
+  const STATUS_MAP = {Mumbai:'Optimal',Delhi:'Optimal',Bengaluru:'Optimal',Chennai:'Degraded',Hyderabad:'Optimal',Pune:'Optimal',Ahmedabad:'Degraded',Kolkata:'Offline'};
+  const tbody = document.getElementById('city-tbody');
+  tbody.innerHTML = cityStats.map(r => {
+    const rate = Math.min(99, Math.round((r.batches / 15) * 100));
+    const status = STATUS_MAP[r.city] || 'Optimal';
+    const sc = status==='Optimal'?'badge-green':status==='Degraded'?'badge-amber':'badge-red';
+    const bc = rate>=70?'var(--green)':rate>=50?'var(--amber)':'var(--red)';
+    const nodes = NODE_MAP[r.city] || 4;
+    return `<tr onclick="showCityPopoverApi('${r.city}',${r.batches},${Math.round(r.weight||0)},${rate},${nodes},'${status}')">
+      <td style="font-weight:600">${r.city}</td>
+      <td class="mono">—</td>
+      <td class="mono">${fmt(r.batches)}</td>
+      <td><div style="display:flex;align-items:center;gap:.5rem"><div class="progress-track" style="width:80px"><div class="progress-fill" style="width:${rate}%;background:${bc}"></div></div><span class="mono" style="font-size:.72rem">${rate}%</span></div></td>
+      <td class="mono">${nodes}</td>
+      <td><span class="badge ${sc}">${status}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function showCityPopoverApi(city, batches, weight, rate, nodes, status) {
+  document.getElementById('city-popover-content').innerHTML = `
+    <h3 style="margin-bottom:1rem">${city}</h3>
+    <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.82rem">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Batches Tracked</span><span class="mono">${fmt(batches)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Total Weight</span><span class="mono">${fmt(weight)} kg</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Recovery Rate</span><span class="mono" style="color:var(--amber)">${rate}%</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Blockchain Nodes</span><span class="mono">${nodes}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Status</span><span class="badge ${status==='Optimal'?'badge-green':status==='Degraded'?'badge-amber':'badge-red'}">${status}</span></div>
+    </div>`;
+  openModal('city-popover');
+}
+
+// ─── TX FEED FROM API ─────────────────────────────────────────────────────────
+async function startTxFeedFromApi() {
+  const feed = document.getElementById('tx-feed');
+  const data = await apiFetch('/api/transactions?limit=10');
+  if (!data) { startTxFeed(); return; }
+  feed.innerHTML = '';
+  data.forEach(tx => feed.appendChild(renderApiTxRow(tx)));
+  // poll every 5s
+  setInterval(async () => {
+    if (currentPage !== 'overview') return;
+    const fresh = await apiFetch('/api/transactions?limit=1');
+    if (!fresh || !fresh[0]) return;
+    const row = renderApiTxRow(fresh[0]);
+    feed.insertBefore(row, feed.firstChild);
+    if (feed.children.length > 10) feed.removeChild(feed.lastChild);
+  }, 5000);
+}
+
+function renderApiTxRow(tx) {
+  const ACTOR_COLORS = {RP:'badge-teal',KB:'badge-amber',RC:'badge-green',MW:'badge-blue'};
+  const prefix = tx.to_actor ? tx.to_actor.slice(0,2) : 'MW';
+  const LABELS = {RP:'RAGPICKER',KB:'KABADIWALA',RC:'RECYCLER',MW:'MUNICIPAL'};
+  const label = LABELS[prefix] || 'SYSTEM';
+  const color = ACTOR_COLORS[prefix] || 'badge-blue';
+  const secs = Math.round((Date.now() - new Date(tx.created_at).getTime()) / 1000);
+  const timeStr = secs < 60 ? secs+'s ago' : Math.round(secs/60)+'m ago';
+  const div = document.createElement('div');
+  div.style.cssText='display:flex;align-items:center;gap:.6rem;padding:.5rem .6rem;background:var(--bg-base);border-radius:7px;font-size:.75rem;animation:toast-in .3s ease';
+  div.innerHTML=`
+    <span class="mono" style="color:var(--amber);flex-shrink:0">${tx.tx_hash.slice(0,6)}...${tx.tx_hash.slice(-4)}</span>
+    <span class="badge ${color}" style="flex-shrink:0">${label}</span>
+    <span style="color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tx.stage} · ${tx.weight_kg}kg · ${tx.location}</span>
+    <span style="color:var(--text-muted);flex-shrink:0">${timeStr}</span>
+    <span style="width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0"></span>`;
+  return div;
 }
 
 // ─── CITY TABLE ───────────────────────────────────────────────────────────────
@@ -966,9 +1115,101 @@ function showChainRecord(i) {
 function trackBatch() {
   const id = document.getElementById('batch-search').value.trim();
   document.getElementById('tracker-batch-id').textContent = id;
-  showToast(`Tracking batch ${id}`,'info');
-  renderTimeline(simStep);
-  renderBlockchainPanel(simStep);
+  if (API_ONLINE) {
+    apiFetch('/api/batches/' + id).then(data => {
+      if (!data || data.error) {
+        showToast('Batch not found — showing demo data','info');
+        renderTimeline(simStep); renderBlockchainPanel(simStep); return;
+      }
+      renderTimelineFromApi(data);
+      renderBlockchainPanelFromApi(data);
+      showToast('Batch loaded from blockchain','success');
+    });
+  } else {
+    renderTimeline(simStep); renderBlockchainPanel(simStep);
+  }
+}
+
+function renderTimelineFromApi(batch) {
+  const STAGE_ORDER = ['generated','collected','sorted','aggregated','in_transit','delivered'];
+  const ICONS = {generated:'🏠',collected:'🚛',sorted:'♻',aggregated:'🏪',in_transit:'🚚',delivered:'🏭'};
+  const currentIdx = STAGE_ORDER.indexOf(batch.status);
+  const container = document.getElementById('batch-timeline');
+  container.innerHTML = '<div id="timeline-line" style="position:absolute;left:1.1rem;top:1rem;bottom:1rem;width:2px;background:var(--border)"></div>';
+  const txMap = {};
+  (batch.transactions||[]).forEach(tx => txMap[tx.stage] = tx);
+
+  STAGE_ORDER.forEach((stage, i) => {
+    const isComplete = i < currentIdx;
+    const isActive   = i === currentIdx;
+    const isPending  = i > currentIdx;
+    const tx = txMap[stage];
+    const dotColor = isComplete?'var(--green)':isActive?'var(--amber)':'var(--border)';
+    const cardBorder = isComplete?'var(--green)':isActive?'var(--amber)':'var(--border)';
+    const pulse = isActive ? 'animation:pulse-green 1.5s infinite' : '';
+    const div = document.createElement('div');
+    div.style.cssText = 'position:relative;margin-bottom:1.25rem';
+    div.innerHTML = `
+      <div style="position:absolute;left:-1.75rem;top:.3rem;width:22px;height:22px;border-radius:50%;border:2px solid ${dotColor};background:${isComplete?dotColor:'var(--bg-base)'};display:flex;align-items:center;justify-content:center;font-size:.65rem;${pulse};z-index:1">${isComplete?'✓':''}</div>
+      <div style="background:var(--bg-base);border:1px solid ${cardBorder};border-radius:10px;padding:1rem">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
+          <span style="font-size:1.1rem">${ICONS[stage]||'📦'}</span>
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.9rem">${stage.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>
+          <span style="margin-left:auto" class="badge ${isComplete?'badge-green':isActive?'badge-amber':'badge-red'}">${isComplete?'Complete':isActive?'Active':'Pending'}</span>
+        </div>
+        ${tx ? `
+          <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.25rem">📍 ${tx.location||batch.city}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.5rem">🕐 ${new Date(tx.created_at).toLocaleString('en-IN')}</div>
+          <div style="font-size:.78rem;color:var(--text-primary);margin-bottom:.25rem">Actor: <span class="mono" style="color:var(--teal);font-size:.7rem">${tx.to_actor}</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="mono" style="font-size:.7rem;color:var(--amber)">${tx.weight_kg} kg</span>
+            <button class="btn btn-outline btn-sm" onclick="showChainRecordApi('${tx.tx_hash}','${tx.to_actor}','${tx.location||batch.city}',${tx.block_number},${tx.gas_used},'${tx.created_at}')" style="font-size:.68rem;padding:.2rem .6rem">View on Chain ↗</button>
+          </div>
+          <div class="mono" style="font-size:.65rem;color:var(--teal);margin-top:.35rem;word-break:break-all">${tx.tx_hash.slice(0,10)}...${tx.tx_hash.slice(-8)}</div>
+        ` : `<div style="font-size:.75rem;color:var(--text-muted)">Awaiting this stage</div>`}
+      </div>`;
+    container.appendChild(div);
+  });
+}
+
+function renderBlockchainPanelFromApi(batch) {
+  const txs = batch.transactions || [];
+  const last = txs[txs.length-1];
+  if (last) {
+    document.getElementById('bc-block').textContent = fmt(last.block_number);
+    document.getElementById('bc-ts').textContent = new Date(last.created_at).toISOString();
+    document.getElementById('bc-curr').textContent = last.tx_hash;
+    if (txs.length > 1) document.getElementById('bc-prev').textContent = txs[txs.length-2].tx_hash;
+  }
+  const evNames = {generated:'BatchCreated',collected:'WeightRecorded',sorted:'MaterialSorted',aggregated:'LotAggregated',in_transit:'TransferInitiated',delivered:'DeliveryConfirmed'};
+  document.getElementById('sc-events').innerHTML = txs.map(tx=>`
+    <div style="display:flex;gap:.75rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--amber)">${evNames[tx.stage]||tx.stage}</span>
+      <span style="color:var(--text-secondary)">by ${tx.to_actor}</span>
+      <span style="color:var(--text-muted);margin-left:auto">blk ${tx.block_number}</span>
+    </div>`).join('');
+  document.getElementById('transfer-history').innerHTML = txs.map(tx=>`
+    <tr>
+      <td class="mono" style="font-size:.68rem;color:var(--text-secondary)">${tx.from_actor||'—'}</td>
+      <td class="mono" style="font-size:.68rem;color:var(--teal)">${tx.to_actor}</td>
+      <td class="mono" style="font-size:.68rem">${tx.weight_kg} kg</td>
+      <td class="mono" style="font-size:.68rem;color:var(--text-muted)">${tx.block_number}</td>
+    </tr>`).join('');
+}
+
+function showChainRecordApi(hash, actor, loc, block, gas, ts) {
+  document.getElementById('chain-slideover-content').innerHTML = `
+    <div style="line-height:2;font-size:.72rem">
+      <div style="color:var(--text-secondary)">Tx Hash:</div>
+      <div style="color:var(--teal);word-break:break-all;margin-bottom:.5rem">${hash}</div>
+      <div style="color:var(--text-secondary)">Block: <span style="color:var(--text-primary)">${fmt(block)}</span></div>
+      <div style="color:var(--text-secondary)">Actor: <span style="color:var(--text-primary)">${actor}</span></div>
+      <div style="color:var(--text-secondary)">Location: <span style="color:var(--text-primary)">${loc}</span></div>
+      <div style="color:var(--text-secondary)">Gas Used: <span class="mono">${fmt(gas)}</span></div>
+      <div style="color:var(--text-secondary)">Timestamp: <span style="color:var(--text-primary)">${new Date(ts).toLocaleString('en-IN')}</span></div>
+      <div style="margin-top:.75rem;padding:.75rem;background:var(--bg-base);border-radius:6px;color:var(--green)">✓ Verified — Record exists on chain</div>
+    </div>`;
+  openSlideover('chain-slideover');
 }
 
 function verifyChain() {
@@ -1073,12 +1314,32 @@ function simulatePickup() {
   const chat = document.getElementById('wa-chat');
   const mat = pick(['PET','HDPE','CARD']);
   const kg = randF(2,8);
+
+  if (API_ONLINE) {
+    // use real worker phone from seed
+    const phone = '+919876543210';
+    const message = `${mat} ${kg}`;
+    const typing = document.createElement('div');
+    typing.style.cssText='align-self:flex-start;background:#1f2c34;border-radius:0 8px 8px 8px;padding:.5rem .85rem;font-size:.8rem;color:var(--text-secondary)';
+    typing.textContent='typing...'; chat.appendChild(typing); chat.scrollTop=chat.scrollHeight;
+    fetch(`http://localhost:3001/api/whatsapp/simulate?phone=${encodeURIComponent(phone)}&message=${encodeURIComponent(message)}`)
+      .then(r=>r.json()).then(data => {
+        typing.remove();
+        chat.appendChild(waBubble(false, `${mat} ${kg}`));
+        setTimeout(() => {
+          chat.appendChild(waBubble(true, data.reply || 'Processing...'));
+          chat.scrollTop=chat.scrollHeight;
+        }, 600);
+      }).catch(() => typing.remove());
+    return;
+  }
+
+  // fallback mock
   const val = Math.floor(kg*(mat==='PET'?15:mat==='HDPE'?11:5));
   const batchId = `TF-MUM-2024-0${rand(1000,9999)}`;
   const typing = document.createElement('div');
   typing.style.cssText='align-self:flex-start;background:#1f2c34;border-radius:0 8px 8px 8px;padding:.5rem .85rem;font-size:.8rem;color:var(--text-secondary)';
-  typing.textContent='typing...'; chat.appendChild(typing);
-  chat.scrollTop=chat.scrollHeight;
+  typing.textContent='typing...'; chat.appendChild(typing); chat.scrollTop=chat.scrollHeight;
   setTimeout(()=>{
     typing.remove();
     chat.appendChild(waBubble(true,`New pickup available near you!\n📍 ${pick(LOCATIONS)}\n${mat} ${kg}kg available\nEstimated: ₹${val}`));
@@ -1236,7 +1497,27 @@ function renderIndustry() {
     {l:'Matched Lots',v:'23',c:'var(--green)'},
     {l:'Pending Deliveries',v:'12',c:'var(--teal)'},
   ].map(k=>`<div class="card" style="text-align:center"><div style="font-size:1.6rem;font-weight:700;font-family:'Space Grotesk',sans-serif;color:${k.c}">${k.v}</div><div style="font-size:.78rem;color:var(--text-secondary);margin-top:.25rem">${k.l}</div></div>`).join('');
-  renderIndustryTable();
+
+  if (API_ONLINE) {
+    apiFetch('/api/lots?limit=50').then(data => {
+      if (data && data.length) {
+        // override IND_LOTS with real data
+        IND_LOTS.length = 0;
+        data.forEach(l => IND_LOTS.push({
+          id: l.id, mat: l.material, qty: l.quantity_kg,
+          grade: l.grade, city: l.city,
+          rating: parseFloat((l.seller_rating/20).toFixed(1)),
+          price: l.price_per_kg,
+          dist: rand(50,800),
+          seller: l.seller_name,
+          _raw_id: l.id
+        }));
+      }
+      renderIndustryTable();
+    });
+  } else {
+    renderIndustryTable();
+  }
 }
 
 function renderIndustryTable() {
@@ -1435,10 +1716,89 @@ function setRange(r, btn) {
 }
 
 function drawAllCharts() {
-  drawLineChart();
-  drawHBarChart();
+  if (API_ONLINE) {
+    apiFetch('/api/analytics/recovery').then(data => {
+      if (data && data.length) drawLineChartFromApi(data);
+      else drawLineChart();
+    });
+    apiFetch('/api/analytics/materials').then(data => {
+      if (data && data.length) drawHBarChartFromApi(data);
+      else drawHBarChart();
+    });
+  } else {
+    drawLineChart();
+    drawHBarChart();
+  }
   drawAreaChart();
   drawScatterChart();
+}
+
+function drawLineChartFromApi(rows) {
+  const c = document.getElementById('line-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  const pad={top:20,right:20,bottom:40,left:55};
+  const labels = rows.map(r => r.month ? r.month.slice(5) : '');
+  const collected = rows.map(r => Math.round(r.total_weight||0));
+  const recycled  = rows.map(r => Math.round((r.total_weight||0)*0.62));
+  ctx.clearRect(0,0,W,H);
+  const cW=W-pad.left-pad.right, cH=H-pad.top-pad.bottom;
+  const maxV = Math.max(...collected, 100) * 1.2;
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.top+cH-(i/4)*cH;
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px JetBrains Mono,monospace'; ctx.textAlign='right';
+    ctx.fillText(Math.round(i/4*maxV),pad.left-6,y+4);
+  }
+  labels.forEach((m,i)=>{
+    const x=pad.left+i*(cW/(labels.length-1||1));
+    ctx.fillStyle='#8b949e'; ctx.font='10px Inter'; ctx.textAlign='center';
+    ctx.fillText(m,x,H-pad.bottom+16);
+  });
+  function drawLine(data,color,fill){
+    if(!data.length) return;
+    const pts=data.map((v,i)=>({x:pad.left+i*(cW/(data.length-1||1)),y:pad.top+cH-(v/maxV)*cH}));
+    if(fill){
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pad.top+cH);
+      pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,pad.top+cH); ctx.closePath();
+      ctx.fillStyle=color+'22'; ctx.fill();
+    }
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+    ctx.strokeStyle=color; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.stroke();
+    pts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();});
+  }
+  drawLine(collected,'#f59e0b',true);
+  drawLine(recycled,'#2dd4bf',true);
+  ctx.fillStyle='#f59e0b'; ctx.fillRect(pad.left,6,12,8);
+  ctx.fillStyle='#8b949e'; ctx.font='11px Inter'; ctx.textAlign='left'; ctx.fillText('Total Collected',pad.left+16,14);
+  ctx.fillStyle='#2dd4bf'; ctx.fillRect(pad.left+130,6,12,8);
+  ctx.fillStyle='#8b949e'; ctx.fillText('Actually Recycled',pad.left+146,14);
+}
+
+function drawHBarChartFromApi(rows) {
+  const c = document.getElementById('hbar-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const COLORS={'PET Bottles':'#60a5fa','HDPE Plastic':'#a78bfa','Metal Scrap':'#4ade80','E-Waste':'#f87171','Cardboard':'#f59e0b','Glass':'#2dd4bf'};
+  const total = rows.reduce((s,r)=>s+(r.total_kg||0),0);
+  const bh=22, gap=8, startY=10, labelW=90;
+  rows.slice(0,6).forEach((r,i)=>{
+    const pct = total ? Math.round(r.total_kg/total*100) : 0;
+    const y=startY+i*(bh+gap);
+    ctx.fillStyle='#8b949e'; ctx.font='11px Inter'; ctx.textAlign='right';
+    ctx.fillText(r.material.replace(' Plastic','').replace(' Bottles',''),labelW-4,y+bh/2+4);
+    ctx.fillStyle='#1f2937'; ctx.fillRect(labelW,y,W-labelW-50,bh);
+    ctx.fillStyle=COLORS[r.material]||'#8b949e';
+    ctx.fillRect(labelW,y,(W-labelW-50)*(pct/100),bh);
+    ctx.fillStyle='#f0f6fc'; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='left';
+    ctx.fillText(pct+'%',W-46,y+bh/2+4);
+  });
 }
 
 // LINE CHART

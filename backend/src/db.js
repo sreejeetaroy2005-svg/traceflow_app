@@ -114,23 +114,28 @@ function get(sql, params = []) {
   return rows[0] || null;
 }
 
-// Helper: run a write query, persist to disk
+let _inTransaction = false;
+
+// Helper: run a write query, persist to disk (skip persist if inside transaction)
 function run(sql, params = []) {
   _db.run(sql, params);
-  persist();
+  if (!_inTransaction) persist();
 }
 
 // Helper: run multiple statements in a transaction
 function transaction(fn) {
   _db.run('BEGIN');
+  _inTransaction = true;
   try {
     fn();
     _db.run('COMMIT');
-    persist();
   } catch (e) {
-    _db.run('ROLLBACK');
+    try { _db.run('ROLLBACK'); } catch(_) {}
     throw e;
+  } finally {
+    _inTransaction = false;
   }
+  persist();
 }
 
 module.exports = { initDb, getDb, all, get, run, transaction, persist };
