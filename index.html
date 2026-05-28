@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TraceFlow — Waste Intelligence Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-base:#0d1117; --bg-surface:#161b22; --bg-elevated:#1f2937;
+  --border:#30363d; --border-bright:#484f58;
+  --amber:#f59e0b; --amber-dim:#92400e;
+  --teal:#2dd4bf; --teal-dim:#134e4a;
+  --purple:#a78bfa; --blue:#60a5fa;
+  --red:#f87171; --green:#4ade80;
+  --text-primary:#f0f6fc; --text-secondary:#8b949e; --text-muted:#484f58;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg-base);color:var(--text-primary);font-family:'Inter',sans-serif;display:flex;min-height:100vh;overflow-x:hidden}
+h1,h2,h3,h4,h5,h6{font-family:'Space Grotesk',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace}
+
+/* LOADING OVERLAY */
+#loader{position:fixed;inset:0;background:var(--bg-base);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1rem;transition:opacity .4s}
+#loader.hidden{opacity:0;pointer-events:none}
+.loader-logo{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;font-weight:700;color:var(--amber)}
+.loader-bar{width:200px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.loader-fill{height:100%;background:var(--amber);border-radius:2px;animation:load-anim .8s ease forwards}
+@keyframes load-anim{from{width:0}to{width:100%}}
+
+/* SIDEBAR */
+#sidebar{position:fixed;left:0;top:0;bottom:0;width:64px;background:var(--bg-surface);border-right:1px solid var(--border);z-index:100;display:flex;flex-direction:column;transition:width .25s ease;overflow:hidden}
+#sidebar:hover{width:220px}
+.sb-logo{display:flex;align-items:center;gap:.75rem;padding:1rem;height:60px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden}
+.sb-logo-icon{font-size:1.4rem;flex-shrink:0;width:36px;text-align:center}
+.sb-logo-text{font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--amber);font-size:1rem}
+.sb-nav{flex:1;padding:.5rem 0}
+.sb-item{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer;border-left:3px solid transparent;transition:all .2s;white-space:nowrap;overflow:hidden;color:var(--text-secondary)}
+.sb-item:hover{background:rgba(255,255,255,.04);color:var(--text-primary)}
+.sb-item.active{border-left-color:var(--amber);color:var(--amber);background:rgba(245,158,11,.08)}
+.sb-icon{font-size:1.2rem;flex-shrink:0;width:36px;text-align:center}
+.sb-label{font-size:.85rem;font-weight:500}
+.sb-footer{padding:1rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:.75rem;white-space:nowrap;overflow:hidden}
+.sb-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse-green 2s infinite;flex-shrink:0;margin-left:14px}
+@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.4)}50%{box-shadow:0 0 0 5px rgba(74,222,128,0)}}
+.sb-footer-text{font-size:.75rem;color:var(--text-secondary)}
+
+/* TOPBAR */
+#topbar{position:fixed;left:64px;right:0;top:0;height:60px;background:rgba(13,17,23,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);z-index:99;display:flex;align-items:center;padding:0 1.5rem;gap:1rem}
+.tb-title{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:1rem;flex:1}
+.tb-search{background:var(--bg-surface);border:1px solid var(--border);color:var(--text-primary);padding:.4rem .9rem;border-radius:6px;font-size:.82rem;width:220px;font-family:'JetBrains Mono',monospace}
+.tb-search:focus{outline:none;border-color:var(--amber)}
+.tb-bell{position:relative;cursor:pointer;font-size:1.2rem;padding:.25rem}
+.tb-badge{position:absolute;top:-2px;right:-4px;background:var(--red);color:#fff;font-size:.6rem;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700}
+.tb-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--amber),var(--teal));display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#000;cursor:pointer;flex-shrink:0}
+
+/* MAIN */
+#main{margin-left:64px;margin-top:60px;flex:1;overflow-y:auto;min-height:calc(100vh - 60px)}
+.page{display:none;padding:2rem;animation:fade-in .2s ease}
+.page.active{display:block}
+@keyframes fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* TOAST */
+#toast-container{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9000;display:flex;flex-direction:column;gap:.5rem}
+.toast{background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:.75rem 1.25rem;font-size:.82rem;min-width:220px;animation:toast-in .3s ease;display:flex;align-items:center;gap:.5rem}
+.toast.success{border-left:3px solid var(--green)}
+.toast.info{border-left:3px solid var(--amber)}
+@keyframes toast-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0}}
+
+/* CARDS */
+.card{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem}
+.card-title{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-secondary);margin-bottom:.75rem;font-weight:600}
+
+/* BADGES */
+.badge{font-size:.68rem;padding:.2rem .55rem;border-radius:20px;font-weight:600;font-family:'JetBrains Mono',monospace;display:inline-block}
+.badge-green{background:rgba(74,222,128,.15);color:var(--green)}
+.badge-amber{background:rgba(245,158,11,.15);color:var(--amber)}
+.badge-red{background:rgba(248,113,113,.15);color:var(--red)}
+.badge-teal{background:rgba(45,212,191,.15);color:var(--teal)}
+.badge-purple{background:rgba(167,139,250,.15);color:var(--purple)}
+.badge-blue{background:rgba(96,165,250,.15);color:var(--blue)}
+
+/* BUTTONS */
+.btn{padding:.5rem 1.25rem;border-radius:7px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:all .15s;display:inline-flex;align-items:center;gap:.4rem}
+.btn:active{transform:scale(.97)}
+.btn-amber{background:var(--amber);color:#000}
+.btn-amber:hover{background:#d97706}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text-primary)}
+.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
+.btn-teal{background:var(--teal);color:#000}
+.btn-teal:hover{background:#14b8a6}
+.btn-sm{padding:.3rem .75rem;font-size:.75rem}
+
+/* PROGRESS BAR */
+.progress-track{background:var(--bg-base);border-radius:4px;height:6px;overflow:hidden}
+.progress-fill{height:100%;border-radius:4px;transition:width .8s ease}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal-box{background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:2rem;max-width:520px;width:90%;transform:scale(.95);transition:transform .2s;max-height:80vh;overflow-y:auto}
+.modal-overlay.open .modal-box{transform:scale(1)}
+.modal-close{float:right;background:none;border:none;color:var(--text-secondary);font-size:1.3rem;cursor:pointer;line-height:1}
+.modal-close:hover{color:var(--text-primary)}
+
+/* SLIDE-OVER */
+.slideover{position:fixed;right:-480px;top:60px;bottom:0;width:460px;background:var(--bg-surface);border-left:1px solid var(--border);z-index:400;transition:right .3s ease;overflow-y:auto;padding:1.5rem}
+.slideover.open{right:0}
+.slideover-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-secondary);font-size:1.3rem;cursor:pointer}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1.5rem}
+.tab-btn{background:none;border:none;color:var(--text-secondary);padding:.75rem 1.25rem;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.88rem;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s}
+.tab-btn:hover{color:var(--text-primary)}
+.tab-btn.active{color:var(--amber);border-bottom-color:var(--amber)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* FORM */
+.form-group{margin-bottom:1rem}
+.form-label{font-size:.78rem;color:var(--text-secondary);margin-bottom:.35rem;display:block;font-weight:500}
+.form-input{width:100%;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);padding:.55rem .85rem;border-radius:7px;font-size:.85rem;font-family:'Inter',sans-serif}
+.form-input:focus{outline:none;border-color:var(--amber)}
+.form-select{width:100%;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);padding:.55rem .85rem;border-radius:7px;font-size:.85rem;cursor:pointer}
+.form-select:focus{outline:none;border-color:var(--amber)}
+
+/* TOGGLE */
+.toggle-wrap{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border)}
+.toggle{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:22px;cursor:pointer;transition:.3s}
+.toggle-slider::before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.toggle input:checked+.toggle-slider{background:var(--amber)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(18px)}
+
+/* TABLE */
+.data-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.data-table th{text-align:left;padding:.6rem .75rem;color:var(--text-secondary);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);background:var(--bg-base);font-weight:600}
+.data-table td{padding:.65rem .75rem;border-bottom:1px solid rgba(48,54,61,.5)}
+.data-table tr:hover td{background:rgba(255,255,255,.025);cursor:pointer}
+
+/* GRID HELPERS */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.5rem}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem}
+</style>
+</head>
+<body>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="loader-logo">♻ TraceFlow</div>
+  <div class="loader-bar"><div class="loader-fill"></div></div>
+  <div style="font-size:.75rem;color:var(--text-secondary);font-family:'JetBrains Mono',monospace">Initializing network...</div>
+</div>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sb-logo">
+    <span class="sb-logo-icon">♻</span>
+    <span class="sb-logo-text">TraceFlow</span>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-item active" data-page="overview"><span class="sb-icon">⬡</span><span class="sb-label">Overview</span></div>
+    <div class="sb-item" data-page="tracker"><span class="sb-icon">⟳</span><span class="sb-label">Live Tracker</span></div>
+    <div class="sb-item" data-page="stakeholders"><span class="sb-icon">👥</span><span class="sb-label">Stakeholders</span></div>
+    <div class="sb-item" data-page="network"><span class="sb-icon">🗺</span><span class="sb-label">Network Map</span></div>
+    <div class="sb-item" data-page="analytics"><span class="sb-icon">📊</span><span class="sb-label">Analytics</span></div>
+    <div class="sb-item" data-page="settings"><span class="sb-icon">⚙</span><span class="sb-label">Settings</span></div>
+  </div>
+  <div class="sb-footer">
+    <div class="sb-dot"></div>
+    <span class="sb-footer-text">Network: Live</span>
+  </div>
+</nav>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="tb-title" id="page-title">Overview Dashboard</div>
+  <input class="tb-search" id="global-search" placeholder="> Search batches, workers..." type="text">
+  <div class="tb-bell">🔔<span class="tb-badge">3</span></div>
+  <div class="tb-avatar" title="Ankit Kumar — System Admin">AK</div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div id="main">
+
+<!-- PAGE 1: OVERVIEW -->
+<div class="page active" id="page-overview">
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-size:1.4rem;margin-bottom:.25rem">Overview Dashboard</h2>
+    <p style="color:var(--text-secondary);font-size:.85rem">Real-time waste intelligence across India's recycling network</p>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="grid-4" style="margin-bottom:1.5rem">
+    <div class="card" style="position:relative;overflow:hidden">
+      <div class="card-title">Total Batches Tracked</div>
+      <div class="mono" style="font-size:1.8rem;font-weight:700;color:var(--amber)" id="kpi-batches">0</div>
+      <div style="font-size:.75rem;color:var(--text-secondary);margin:.25rem 0 .75rem">All time</div>
+      <span class="badge badge-green">+12.4%</span>
+      <canvas id="spark-0" width="100" height="32" style="position:absolute;bottom:0;right:0;opacity:.4"></canvas>
+    </div>
+    <div class="card" style="position:relative;overflow:hidden">
+      <div class="card-title">Active Workers</div>
+      <div class="mono" style="font-size:1.8rem;font-weight:700;color:var(--teal)" id="kpi-workers">0</div>
+      <div style="font-size:.75rem;color:var(--text-secondary);margin:.25rem 0 .75rem">Online now</div>
+      <span class="badge badge-green">+8.1%</span>
+      <canvas id="spark-1" width="100" height="32" style="position:absolute;bottom:0;right:0;opacity:.4"></canvas>
+    </div>
+    <div class="card" style="position:relative;overflow:hidden">
+      <div class="card-title">Material Recovered Today</div>
+      <div class="mono" style="font-size:1.8rem;font-weight:700;color:var(--purple)" id="kpi-material">0</div>
+      <div style="font-size:.75rem;color:var(--text-secondary);margin:.25rem 0 .75rem">Tonnes</div>
+      <span class="badge badge-red">-3.1%</span>
+      <canvas id="spark-2" width="100" height="32" style="position:absolute;bottom:0;right:0;opacity:.4"></canvas>
+    </div>
+    <div class="card" style="position:relative;overflow:hidden">
+      <div class="card-title">Blockchain Transactions</div>
+      <div class="mono" style="font-size:1.8rem;font-weight:700;color:var(--blue)" id="kpi-tx">0</div>
+      <div style="font-size:.75rem;color:var(--text-secondary);margin:.25rem 0 .75rem">All time</div>
+      <span class="badge badge-green">+21.7%</span>
+      <canvas id="spark-3" width="100" height="32" style="position:absolute;bottom:0;right:0;opacity:.4"></canvas>
+    </div>
+  </div>
+
+  <!-- MIDDLE ROW -->
+  <div style="display:grid;grid-template-columns:60% 40%;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- TX FEED -->
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;gap:.5rem">
+        Live Transaction Feed
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-green 1.5s infinite;display:inline-block"></span>
+      </div>
+      <div id="tx-feed" style="display:flex;flex-direction:column;gap:.5rem;max-height:320px;overflow:hidden"></div>
+    </div>
+    <!-- DONUT -->
+    <div class="card">
+      <div class="card-title">Material Breakdown</div>
+      <div style="display:flex;justify-content:center;position:relative">
+        <canvas id="donut-chart" width="180" height="180"></canvas>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
+          <div class="mono" style="font-size:1.1rem;font-weight:700;color:var(--text-primary)">847 T</div>
+          <div style="font-size:.65rem;color:var(--text-secondary)">Today</div>
+        </div>
+      </div>
+      <div id="donut-legend" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .75rem;margin-top:.75rem;font-size:.75rem"></div>
+    </div>
+  </div>
+
+  <!-- CITY TABLE -->
+  <div class="card">
+    <div class="card-title">City Performance</div>
+    <div style="overflow-x:auto">
+      <table class="data-table" id="city-table">
+        <thead>
+          <tr>
+            <th>City</th><th>Active Workers</th><th>Batches Today</th>
+            <th>Recovery Rate</th><th>Blockchain Nodes</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="city-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 2: LIVE TRACKER -->
+<div class="page" id="page-tracker">
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-size:1.4rem;margin-bottom:.25rem">Live Batch Tracker</h2>
+    <p style="color:var(--text-secondary);font-size:.85rem">Track any waste batch through the verified supply chain</p>
+  </div>
+
+  <!-- SEARCH BAR -->
+  <div style="display:flex;gap:.75rem;align-items:center;margin-bottom:1rem">
+    <div style="flex:1;position:relative">
+      <span style="position:absolute;left:.85rem;top:50%;transform:translateY(-50%);color:var(--amber);font-family:'JetBrains Mono',monospace;font-size:.9rem">›</span>
+      <input id="batch-search" class="form-input mono" style="padding-left:2rem;font-size:.88rem" value="TF-MUM-2024-00847" placeholder="Enter Batch ID or scan QR...">
+    </div>
+    <button class="btn btn-amber" onclick="trackBatch()">Track Batch</button>
+    <button class="btn btn-outline btn-sm" onclick="runSimulation()">▶ Run Simulation</button>
+  </div>
+  <div style="display:flex;gap:.5rem;margin-bottom:1.5rem">
+    <span class="badge badge-amber" style="cursor:pointer;padding:.3rem .75rem" onclick="document.getElementById('batch-search').value='TF-MUM-2024-00847'">TF-MUM-2024-00847</span>
+    <span class="badge badge-teal" style="cursor:pointer;padding:.3rem .75rem" onclick="document.getElementById('batch-search').value='TF-DEL-2024-01203'">TF-DEL-2024-01203</span>
+    <span class="badge badge-purple" style="cursor:pointer;padding:.3rem .75rem" onclick="document.getElementById('batch-search').value='TF-BLR-2024-00991'">TF-BLR-2024-00991</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:55% 45%;gap:1.5rem">
+    <!-- TIMELINE -->
+    <div class="card">
+      <div class="card-title">Batch Journey — <span class="mono" style="color:var(--amber)" id="tracker-batch-id">TF-MUM-2024-00847</span></div>
+      <div id="batch-timeline" style="position:relative;padding-left:2.5rem">
+        <div id="timeline-line" style="position:absolute;left:1.1rem;top:1rem;bottom:1rem;width:2px;background:var(--border)"></div>
+      </div>
+    </div>
+
+    <!-- BLOCKCHAIN PANEL -->
+    <div class="card" style="font-family:'JetBrains Mono',monospace">
+      <div class="card-title">Blockchain Verification</div>
+      <div style="background:var(--bg-base);border-radius:8px;padding:1rem;font-size:.72rem;margin-bottom:1rem;line-height:1.8">
+        <div style="color:var(--text-secondary)">Block Number: <span style="color:var(--amber)" id="bc-block">4,829,441</span></div>
+        <div style="color:var(--text-secondary)">Timestamp: <span style="color:var(--text-primary)" id="bc-ts">2024-11-14T14:30:22Z</span></div>
+        <div style="color:var(--text-secondary)">Prev Hash:</div>
+        <div style="color:var(--teal);word-break:break-all;font-size:.68rem" id="bc-prev">0x3f8a2b1c9d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a</div>
+        <div style="color:var(--text-secondary);margin-top:.25rem">Curr Hash:</div>
+        <div style="color:var(--green);word-break:break-all;font-size:.68rem" id="bc-curr">0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b</div>
+      </div>
+      <button class="btn btn-teal btn-sm" style="width:100%;margin-bottom:1rem;justify-content:center" onclick="verifyChain()">Verify Integrity</button>
+      <div id="verify-bar" style="display:none;margin-bottom:1rem">
+        <div class="progress-track"><div class="progress-fill" id="verify-fill" style="width:0;background:var(--teal)"></div></div>
+        <div style="font-size:.72rem;color:var(--text-secondary);margin-top:.35rem" id="verify-status">Verifying...</div>
+      </div>
+      <div class="card-title" style="margin-top:.5rem">Smart Contract Events</div>
+      <div id="sc-events" style="font-size:.7rem;line-height:1.9"></div>
+      <div class="card-title" style="margin-top:1rem">Transfer History</div>
+      <table class="data-table" style="font-size:.72rem">
+        <thead><tr><th>From</th><th>To</th><th>Weight</th><th>Block</th></tr></thead>
+        <tbody id="transfer-history"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 3: STAKEHOLDERS -->
+<div class="page" id="page-stakeholders">
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-size:1.4rem;margin-bottom:.25rem">Stakeholder Views</h2>
+    <p style="color:var(--text-secondary);font-size:.85rem">Role-based interfaces for every actor in the waste chain</p>
+  </div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('stakeholders','ragpicker',this)">Ragpicker</button>
+    <button class="tab-btn" onclick="switchTab('stakeholders','kabadiwala',this)">Kabadiwala</button>
+    <button class="tab-btn" onclick="switchTab('stakeholders','municipality',this)">Municipality</button>
+    <button class="tab-btn" onclick="switchTab('stakeholders','industry',this)">Industry</button>
+  </div>
+
+  <!-- RAGPICKER TAB -->
+  <div class="tab-panel active" id="tab-ragpicker">
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:1.5rem">
+      <!-- PROFILE -->
+      <div>
+        <div class="card" style="text-align:center;margin-bottom:1rem">
+          <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--purple));display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;margin:0 auto .75rem;color:#000">SD</div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.05rem">Sunita Devi</div>
+          <div class="mono" style="font-size:.75rem;color:var(--teal);margin:.2rem 0">RP-8834</div>
+          <div style="font-size:.78rem;color:var(--text-secondary);margin-bottom:.75rem">Dharavi, Mumbai · Since Mar 2022</div>
+          <span class="badge badge-green">✓ Verified Worker</span>
+          <div style="margin:1rem 0;display:flex;justify-content:center">
+            <canvas id="rep-arc" width="100" height="60"></canvas>
+          </div>
+          <div style="font-size:.72rem;color:var(--text-secondary)">Reputation Score</div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;color:var(--amber)">94<span style="font-size:.8rem;color:var(--text-secondary)">/100</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">This Month</div>
+          <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.82rem">
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Total Earnings</span><span class="mono" style="color:var(--green)">₹8,420</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Materials Processed</span><span class="mono">2.4 tonnes</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Pickups Completed</span><span class="mono">47</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Avg per Pickup</span><span class="mono" style="color:var(--amber)">₹179</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- WHATSAPP UI -->
+      <div>
+        <div style="background:#0b141a;border-radius:20px;max-width:360px;overflow:hidden;border:1px solid #2a3942;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+          <div style="background:#1f2c34;padding:.75rem 1rem;display:flex;align-items:center;gap:.75rem">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;color:#000">TF</div>
+            <div>
+              <div style="font-weight:600;font-size:.88rem">TraceFlow Bot</div>
+              <div style="font-size:.7rem;color:#8696a0">online</div>
+            </div>
+          </div>
+          <div id="wa-chat" style="padding:1rem;min-height:320px;display:flex;flex-direction:column;gap:.6rem;background-image:url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.02\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/svg%3E')">
+          </div>
+          <div style="background:#1f2c34;padding:.5rem .75rem;display:flex;gap:.5rem">
+            <input id="wa-input" style="flex:1;background:#2a3942;border:none;color:#fff;padding:.4rem .75rem;border-radius:20px;font-size:.8rem;outline:none" placeholder="Type a message...">
+            <button onclick="waSend()" style="background:var(--teal);border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:.9rem">➤</button>
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm" style="margin-top:.75rem" onclick="simulatePickup()">Simulate New Pickup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KABADIWALA TAB -->
+  <div class="tab-panel" id="tab-kabadiwala">
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem">
+      <div>
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-title">Today's Incoming Lots</div>
+          <table class="data-table">
+            <thead><tr><th>Lot ID</th><th>From</th><th>Materials</th><th>Weight</th><th>Status</th></tr></thead>
+            <tbody id="kab-lots"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-title">Weekly Earnings by Material</div>
+          <canvas id="kab-bar" width="500" height="160"></canvas>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-title">Current Stock Inventory</div>
+          <div id="kab-stock" style="display:flex;flex-direction:column;gap:.5rem;font-size:.82rem"></div>
+          <button class="btn btn-amber btn-sm" style="margin-top:1rem;width:100%;justify-content:center" onclick="openModal('post-stock-modal')">Post to Market</button>
+        </div>
+        <div class="card">
+          <div class="card-title">Price Alerts</div>
+          <div id="kab-alerts" style="display:flex;flex-direction:column;gap:.5rem;font-size:.78rem"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MUNICIPALITY TAB -->
+  <div class="tab-panel" id="tab-municipality">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem" id="muni-kpis"></div>
+    <div class="card">
+      <div class="card-title">Mumbai Zone Collection Status</div>
+      <div id="muni-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-top:.5rem"></div>
+    </div>
+  </div>
+
+  <!-- INDUSTRY TAB -->
+  <div class="tab-panel" id="tab-industry">
+    <div class="grid-3" style="margin-bottom:1.5rem" id="ind-kpis"></div>
+    <div class="card">
+      <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+        <select class="form-select" style="width:auto" id="ind-filter-mat" onchange="renderIndustryTable()">
+          <option value="">All Materials</option>
+          <option>PET Bottles</option><option>HDPE Plastic</option>
+          <option>Cardboard</option><option>Metal Scrap</option>
+          <option>E-Waste</option><option>Glass</option>
+        </select>
+        <select class="form-select" style="width:auto" id="ind-filter-city" onchange="renderIndustryTable()">
+          <option value="">All Cities</option>
+          <option>Mumbai</option><option>Delhi</option><option>Bengaluru</option>
+          <option>Pune</option><option>Chennai</option>
+        </select>
+        <select class="form-select" style="width:auto" id="ind-filter-grade" onchange="renderIndustryTable()">
+          <option value="">All Grades</option>
+          <option>A</option><option>B</option><option>C</option>
+        </select>
+        <div style="margin-left:auto;font-size:.78rem;color:var(--text-secondary)" id="ind-count"></div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>Lot ID</th><th>Material</th><th>Qty (kg)</th><th>Grade</th><th>City</th><th>Seller ★</th><th>Price/kg</th><th>Action</th></tr></thead>
+          <tbody id="ind-tbody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;font-size:.8rem">
+        <span style="color:var(--text-secondary)" id="ind-page-info"></span>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-outline btn-sm" id="ind-prev" onclick="indPage(-1)">← Prev</button>
+          <button class="btn btn-outline btn-sm" id="ind-next" onclick="indPage(1)">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 4: NETWORK MAP -->
+<div class="page" id="page-network">
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-size:1.4rem;margin-bottom:.25rem">Network Map</h2>
+    <p style="color:var(--text-secondary);font-size:.85rem">Live shipment routes and node status across India</p>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 220px;gap:1.5rem">
+    <div class="card" style="position:relative;min-height:500px">
+      <canvas id="network-map" width="700" height="480" style="width:100%;cursor:pointer"></canvas>
+      <div id="city-tooltip" style="position:absolute;display:none;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:.75rem;font-size:.78rem;pointer-events:none;min-width:180px;z-index:10"></div>
+      <!-- Legend -->
+      <div style="position:absolute;bottom:1rem;left:1rem;background:rgba(13,17,23,.85);border:1px solid var(--border);border-radius:8px;padding:.75rem;font-size:.72rem">
+        <div style="margin-bottom:.35rem;font-weight:600;color:var(--text-secondary)">LEGEND</div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block"></span>Optimal Node</div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--amber);display:inline-block"></span>Degraded Node</div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem"><span style="width:12px;height:2px;background:var(--teal);display:inline-block"></span>Active Shipment</div>
+        <div style="color:var(--text-muted);margin-top:.35rem">Circle size = activity volume</div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">Network Stats</div>
+        <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.82rem">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Total Nodes</span><span class="mono" style="color:var(--amber)">847</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Active Shipments</span><span class="mono" style="color:var(--teal)">234</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Avg Confirm Time</span><span class="mono">4.2s</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Network Uptime</span><span class="mono" style="color:var(--green)">99.94%</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Pending Txns</span><span class="mono">12</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Active Routes</div>
+        <div id="active-routes" style="display:flex;flex-direction:column;gap:.5rem;font-size:.75rem"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 5: ANALYTICS -->
+<div class="page" id="page-analytics">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+    <div>
+      <h2 style="font-size:1.4rem;margin-bottom:.25rem">Analytics</h2>
+      <p style="color:var(--text-secondary);font-size:.85rem">Waste recovery trends and performance metrics</p>
+    </div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-outline btn-sm" onclick="setRange('7d',this)">7 Days</button>
+      <button class="btn btn-outline btn-sm active-range" onclick="setRange('30d',this)">30 Days</button>
+      <button class="btn btn-outline btn-sm" onclick="setRange('90d',this)">90 Days</button>
+      <button class="btn btn-outline btn-sm" onclick="setRange('1y',this)">1 Year</button>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="card-title">Monthly Waste Recovery Volume (Jan–Nov 2024)</div>
+    <canvas id="line-chart" width="900" height="220"></canvas>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem">
+    <div class="card">
+      <div class="card-title">Recovery Rate by Material Type</div>
+      <canvas id="hbar-chart" width="400" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Worker Onboarding Trend</div>
+      <canvas id="area-chart" width="400" height="200"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">City Performance Scatter — Workers vs Recovery Rate</div>
+    <canvas id="scatter-chart" width="900" height="240"></canvas>
+  </div>
+</div>
+
+<!-- PAGE 6: SETTINGS -->
+<div class="page" id="page-settings">
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-size:1.4rem;margin-bottom:.25rem">Settings</h2>
+    <p style="color:var(--text-secondary);font-size:.85rem">Configure your TraceFlow workspace</p>
+  </div>
+  <div style="max-width:640px;display:flex;flex-direction:column;gap:1rem">
+    <details class="card" open>
+      <summary style="cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem;list-style:none;display:flex;justify-content:space-between;align-items:center">Profile <span style="color:var(--text-muted)">▾</span></summary>
+      <div style="margin-top:1rem;display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" value="Ankit Kumar"></div>
+        <div class="form-group"><label class="form-label">Role</label><input class="form-input" value="System Admin"></div>
+        <div class="form-group"><label class="form-label">City</label><input class="form-input" value="Mumbai"></div>
+        <div class="form-group"><label class="form-label">Contact</label><input class="form-input" value="+91 98765 43210"></div>
+      </div>
+      <button class="btn btn-amber btn-sm" onclick="showToast('Profile saved successfully','success')">Save Changes</button>
+    </details>
+    <details class="card">
+      <summary style="cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem;list-style:none;display:flex;justify-content:space-between;align-items:center">Notifications <span style="color:var(--text-muted)">▾</span></summary>
+      <div style="margin-top:1rem">
+        <div class="toggle-wrap"><span style="font-size:.85rem">New batch alerts</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-wrap"><span style="font-size:.85rem">Price change alerts</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="toggle-wrap"><span style="font-size:.85rem">Network status alerts</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+        <div class="toggle-wrap"><span style="font-size:.85rem">Weekly digest email</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+      </div>
+    </details>
+    <details class="card">
+      <summary style="cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem;list-style:none;display:flex;justify-content:space-between;align-items:center">Blockchain Config <span style="color:var(--text-muted)">▾</span></summary>
+      <div style="margin-top:1rem;font-size:.82rem;display:flex;flex-direction:column;gap:.6rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Network</span><span>Hyperledger Fabric Testnet</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Node URL</span><span class="mono" style="font-size:.72rem;color:var(--teal)">grpc://fabric-node.traceflow.in:7051</span></div>
+        <div><span style="color:var(--text-secondary)">Wallet Address</span><div class="mono" style="font-size:.7rem;color:var(--amber);margin-top:.25rem;word-break:break-all">0x7f3a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a</div></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Block Explorer</span><a href="#" style="color:var(--blue);font-size:.78rem">explorer.traceflow.in ↗</a></div>
+        <button class="btn btn-outline btn-sm" style="width:fit-content" onclick="testConnection()">Test Connection</button>
+        <div id="conn-bar" style="display:none">
+          <div class="progress-track"><div class="progress-fill" id="conn-fill" style="width:0;background:var(--teal)"></div></div>
+          <div style="font-size:.72rem;color:var(--text-secondary);margin-top:.25rem" id="conn-status">Pinging node...</div>
+        </div>
+      </div>
+    </details>
+    <details class="card">
+      <summary style="cursor:pointer;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem;list-style:none;display:flex;justify-content:space-between;align-items:center">Data Export <span style="color:var(--text-muted)">▾</span></summary>
+      <div style="margin-top:1rem;display:flex;flex-direction:column;gap:.75rem">
+        <button class="btn btn-outline" onclick="showToast('Downloading Transaction History...','info')">↓ Transaction History (CSV)</button>
+        <button class="btn btn-outline" onclick="showToast('Downloading Worker Registry...','info')">↓ Worker Registry (CSV)</button>
+        <button class="btn btn-outline" onclick="showToast('Generating Analytics Report...','info')">↓ Analytics Report (PDF)</button>
+      </div>
+    </details>
+  </div>
+</div>
+
+</div><!-- end #main -->
+
+<!-- MODALS -->
+<div class="modal-overlay" id="post-stock-modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('post-stock-modal')">✕</button>
+    <h3 style="margin-bottom:1.25rem">Post Stock to Market</h3>
+    <div class="form-group"><label class="form-label">Material Type</label>
+      <select class="form-select"><option>PET Bottles</option><option>HDPE Plastic</option><option>Cardboard</option><option>Metal Scrap</option></select>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Quantity (kg)</label><input class="form-input" placeholder="e.g. 450"></div>
+      <div class="form-group"><label class="form-label">Asking Price (₹/kg)</label><input class="form-input" placeholder="e.g. 14"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Quality Grade</label>
+      <select class="form-select"><option>A — Premium</option><option>B — Standard</option><option>C — Mixed</option></select>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><input class="form-input" placeholder="Any additional details..."></div>
+    <button class="btn btn-amber" style="width:100%;justify-content:center;margin-top:.5rem" onclick="closeModal('post-stock-modal');showToast('Stock posted to market!','success')">Post Listing</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="city-popover">
+  <div class="modal-box" style="max-width:380px">
+    <button class="modal-close" onclick="closeModal('city-popover')">✕</button>
+    <div id="city-popover-content"></div>
+  </div>
+</div>
+
+<!-- SLIDE-OVER: Chain Verify -->
+<div class="slideover" id="chain-slideover">
+  <button class="slideover-close" onclick="closeSlideover('chain-slideover')">✕</button>
+  <h3 style="margin-bottom:1rem;font-size:1rem">On-Chain Record</h3>
+  <div id="chain-slideover-content" style="font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:1.9"></div>
+</div>
+
+<!-- SLIDE-OVER: Industry Quote -->
+<div class="slideover" id="quote-slideover">
+  <button class="slideover-close" onclick="closeSlideover('quote-slideover')">✕</button>
+  <h3 style="margin-bottom:1rem;font-size:1rem">Lot Details & Quote</h3>
+  <div id="quote-slideover-content"></div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+// ─── UTILITIES ───────────────────────────────────────────────────────────────
+const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+const randF = (a,b,d=1) => parseFloat((Math.random()*(b-a)+a).toFixed(d));
+const pick = arr => arr[rand(0,arr.length-1)];
+const hex = () => '0x'+[...Array(40)].map(()=>'0123456789abcdef'[rand(0,15)]).join('');
+const shortHex = h => h.slice(0,6)+'...'+h.slice(-4);
+const fmt = n => n.toLocaleString('en-IN');
+
+const CITIES = ['Mumbai','Delhi','Bengaluru','Chennai','Hyderabad','Pune','Ahmedabad','Kolkata'];
+const MATERIALS = ['PET Bottles','HDPE Plastic','Cardboard','E-Waste','Glass','Metal Scrap'];
+const MAT_SHORT = ['PET','HDPE','CARD','EWST','GLASS','METAL'];
+const MAT_COLORS = ['#60a5fa','#a78bfa','#f59e0b','#f87171','#2dd4bf','#4ade80'];
+const PRICES = {PET:rand(12,18),HDPE:rand(8,14),Cardboard:rand(4,7),'Metal Scrap':rand(28,45),'E-Waste':rand(20,35),Glass:rand(3,6)};
+const COMPANIES = ['GreenCycle Pvt Ltd','EcoRevive Industries','RecycleMart','WasteWorth India'];
+const NAMES = ['Ramesh Patil','Sunita Devi','Mohan Sharma','Priya Nair','Arjun Singh','Kavita Rao','Deepak Verma','Anita Joshi','Suresh Kumar','Meena Pillai'];
+
+// ─── NAVIGATION ──────────────────────────────────────────────────────────────
+const PAGE_TITLES = {overview:'Overview Dashboard',tracker:'Live Batch Tracker',stakeholders:'Stakeholder Views',network:'Network Map',analytics:'Analytics',settings:'Settings'};
+let currentPage = 'overview';
+
+document.querySelectorAll('.sb-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.dataset.page;
+    navigateTo(page);
+  });
+});
+
+function navigateTo(page) {
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-'+page));
+  document.getElementById('page-title').textContent = PAGE_TITLES[page];
+  currentPage = page;
+  if(page==='analytics') setTimeout(drawAllCharts,100);
+  if(page==='network') setTimeout(drawNetworkMap,100);
+  if(page==='tracker') initTracker();
+  if(page==='stakeholders') initStakeholders();
+}
+
+// ─── LOADER ───────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    document.getElementById('loader').classList.add('hidden');
+    initOverview();
+    initTracker();
+    initStakeholders();
+  }, 900);
+});
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg, type='info') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = (type==='success'?'✓ ':'ℹ ') + msg;
+  c.appendChild(t);
+  setTimeout(() => { t.style.animation='toast-out .3s ease forwards'; setTimeout(()=>t.remove(),300); }, 3000);
+}
+
+// ─── MODAL / SLIDEOVER ────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openSlideover(id) { document.getElementById(id).classList.add('open'); }
+function closeSlideover(id) { document.getElementById(id).classList.remove('open'); }
+
+// ─── KEYBOARD SHORTCUT ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if(e.key==='/' && document.activeElement.tagName!=='INPUT') {
+    e.preventDefault();
+    document.getElementById('global-search').focus();
+  }
+});
+
+// ─── SPARKLINES ───────────────────────────────────────────────────────────────
+function drawSparkline(canvasId, color) {
+  const c = document.getElementById(canvasId);
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const data = [rand(20,40),rand(30,50),rand(25,55),rand(40,65),rand(50,70),rand(55,80),rand(65,90)];
+  const w=c.width, h=c.height;
+  const max=Math.max(...data), min=Math.min(...data);
+  const pts = data.map((v,i)=>({x:i*(w/(data.length-1)),y:h-(v-min)/(max-min)*h*0.8-h*0.1}));
+  ctx.clearRect(0,0,w,h);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+// ─── OVERVIEW ─────────────────────────────────────────────────────────────────
+function initOverview() {
+  animateCounter('kpi-batches',128447,1200);
+  animateCounter('kpi-workers',3842,1000);
+  animateCounter('kpi-material',847,800);
+  animateCounter('kpi-tx',294118,1400);
+  drawSparkline('spark-0','#f59e0b');
+  drawSparkline('spark-1','#2dd4bf');
+  drawSparkline('spark-2','#a78bfa');
+  drawSparkline('spark-3','#60a5fa');
+  drawDonut();
+  renderCityTable();
+  startTxFeed();
+}
+
+function animateCounter(id, target, duration) {
+  const el = document.getElementById(id);
+  const start = performance.now();
+  function step(now) {
+    const p = Math.min((now-start)/duration,1);
+    const ease = 1-Math.pow(1-p,3);
+    el.textContent = fmt(Math.floor(ease*target));
+    if(p<1) requestAnimationFrame(step);
+    else el.textContent = fmt(target);
+  }
+  requestAnimationFrame(step);
+}
+
+// ─── DONUT CHART ──────────────────────────────────────────────────────────────
+function drawDonut() {
+  const c = document.getElementById('donut-chart');
+  const ctx = c.getContext('2d');
+  const data = [{l:'PET Bottles',v:34,c:'#60a5fa'},{l:'HDPE',v:18,c:'#a78bfa'},{l:'Cardboard',v:22,c:'#f59e0b'},{l:'E-Waste',v:8,c:'#f87171'},{l:'Glass',v:7,c:'#2dd4bf'},{l:'Metal Scrap',v:11,c:'#4ade80'}];
+  const cx=90,cy=90,r=70,ir=45;
+  let angle=-Math.PI/2;
+  ctx.clearRect(0,0,180,180);
+  data.forEach(d => {
+    const slice = (d.v/100)*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,angle,angle+slice);
+    ctx.closePath(); ctx.fillStyle=d.c; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx,cy,ir,0,Math.PI*2);
+    ctx.fillStyle='#161b22'; ctx.fill();
+    angle+=slice;
+  });
+  const leg = document.getElementById('donut-legend');
+  leg.innerHTML = data.map(d=>`<div style="display:flex;align-items:center;gap:.35rem"><span style="width:8px;height:8px;border-radius:50%;background:${d.c};flex-shrink:0"></span><span style="color:var(--text-secondary)">${d.l}</span><span class="mono" style="margin-left:auto;font-size:.72rem">${d.v}%</span></div>`).join('');
+}
+
+// ─── CITY TABLE ───────────────────────────────────────────────────────────────
+const cityData = [
+  {city:'Mumbai',workers:842,batches:1247,rate:78,nodes:12,status:'Optimal'},
+  {city:'Delhi',workers:731,batches:1089,rate:65,nodes:10,status:'Optimal'},
+  {city:'Bengaluru',workers:524,batches:834,rate:71,nodes:8,status:'Optimal'},
+  {city:'Chennai',workers:398,batches:612,rate:58,nodes:7,status:'Degraded'},
+  {city:'Hyderabad',workers:312,batches:489,rate:62,nodes:6,status:'Optimal'},
+  {city:'Pune',workers:287,batches:421,rate:74,nodes:5,status:'Optimal'},
+  {city:'Ahmedabad',workers:241,batches:378,rate:49,nodes:4,status:'Degraded'},
+  {city:'Kolkata',workers:507,batches:723,rate:41,nodes:6,status:'Offline'},
+];
+
+function renderCityTable() {
+  const tbody = document.getElementById('city-tbody');
+  tbody.innerHTML = cityData.map(r => {
+    const sc = r.status==='Optimal'?'badge-green':r.status==='Degraded'?'badge-amber':'badge-red';
+    const bc = r.rate>=70?'var(--green)':r.rate>=50?'var(--amber)':'var(--red)';
+    return `<tr onclick="showCityPopover('${r.city}')">
+      <td style="font-weight:600">${r.city}</td>
+      <td class="mono">${fmt(r.workers)}</td>
+      <td class="mono">${fmt(r.batches)}</td>
+      <td><div style="display:flex;align-items:center;gap:.5rem"><div class="progress-track" style="width:80px"><div class="progress-fill" style="width:${r.rate}%;background:${bc}"></div></div><span class="mono" style="font-size:.72rem">${r.rate}%</span></div></td>
+      <td class="mono">${r.nodes}</td>
+      <td><span class="badge ${sc}">${r.status}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function showCityPopover(city) {
+  const r = cityData.find(c=>c.city===city);
+  document.getElementById('city-popover-content').innerHTML = `
+    <h3 style="margin-bottom:1rem">${city}</h3>
+    <div style="display:flex;flex-direction:column;gap:.6rem;font-size:.82rem">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Active Workers</span><span class="mono">${fmt(r.workers)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Batches Today</span><span class="mono">${fmt(r.batches)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Recovery Rate</span><span class="mono" style="color:var(--amber)">${r.rate}%</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Blockchain Nodes</span><span class="mono">${r.nodes}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Status</span><span class="badge ${r.status==='Optimal'?'badge-green':r.status==='Degraded'?'badge-amber':'badge-red'}">${r.status}</span></div>
+    </div>`;
+  openModal('city-popover');
+}
+</script>
+
+<script>
+// ─── TX FEED ──────────────────────────────────────────────────────────────────
+const ACTOR_TYPES = ['RAGPICKER','KABADIWALA','RECYCLER','MUNICIPAL'];
+const ACTOR_COLORS = {'RAGPICKER':'badge-teal','KABADIWALA':'badge-amber','RECYCLER':'badge-green','MUNICIPAL':'badge-blue'};
+const LOCATIONS = ['Dharavi, Mumbai','Andheri, Mumbai','Karol Bagh, Delhi','Koramangala, Bengaluru','T. Nagar, Chennai','Banjara Hills, Hyderabad','Kothrud, Pune','Navrangpura, Ahmedabad','Salt Lake, Kolkata'];
+let txSeconds = [2,5,8,12,18,24,31,40,52,67];
+
+function genTx() {
+  const mat = pick(MATERIALS);
+  const actor = pick(ACTOR_TYPES);
+  const wt = randF(2,25);
+  const loc = pick(LOCATIONS);
+  const hash = hex();
+  const isPending = Math.random()<0.2;
+  return {hash,actor,mat,wt,loc,isPending};
+}
+
+function renderTxRow(tx, secs) {
+  const div = document.createElement('div');
+  div.style.cssText='display:flex;align-items:center;gap:.6rem;padding:.5rem .6rem;background:var(--bg-base);border-radius:7px;font-size:.75rem;animation:toast-in .3s ease';
+  div.innerHTML=`
+    <span class="mono" style="color:var(--amber);flex-shrink:0">${shortHex(tx.hash)}</span>
+    <span class="badge ${ACTOR_COLORS[tx.actor]}" style="flex-shrink:0">${tx.actor}</span>
+    <span style="color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tx.mat} · ${tx.wt}kg · ${tx.loc}</span>
+    <span style="color:var(--text-muted);flex-shrink:0">${secs}s ago</span>
+    <span style="width:7px;height:7px;border-radius:50%;background:${tx.isPending?'var(--amber)':'var(--green)'};flex-shrink:0"></span>`;
+  return div;
+}
+
+function startTxFeed() {
+  const feed = document.getElementById('tx-feed');
+  txSeconds = [2,5,8,12,18,24,31,40,52,67];
+  feed.innerHTML='';
+  txSeconds.forEach((s,i) => {
+    const tx = genTx();
+    feed.appendChild(renderTxRow(tx,s));
+  });
+  setInterval(() => {
+    if(currentPage!=='overview') return;
+    const tx = genTx();
+    const row = renderTxRow(tx,2);
+    feed.insertBefore(row, feed.firstChild);
+    if(feed.children.length>10) feed.removeChild(feed.lastChild);
+    txSeconds = txSeconds.map(s=>s+3);
+    Array.from(feed.children).forEach((c,i)=>{
+      const span = c.querySelectorAll('span')[4];
+      if(span) span.textContent = (txSeconds[i]||rand(60,120))+'s ago';
+    });
+  }, 3000);
+}
+</script>
+
+<script>
+// ─── TRACKER ──────────────────────────────────────────────────────────────────
+const BATCH_STAGES = [
+  {icon:'🏠',name:'Generated',loc:'Dharavi Ward 84, Mumbai',time:'14 Nov 2024, 07:23 AM',actor:'Municipal Worker: Ramesh Patil',actorId:'MW-4421',detail:'QR batch label printed. Household waste collected.',weight:'~12.4 kg estimated',status:'complete'},
+  {icon:'🚛',name:'Collected',loc:'GPS: 19.0390°N, 72.8527°E',time:'14 Nov 2024, 09:41 AM',actor:'Vehicle: MH-04-T-2291',actorId:'VH-2291',detail:'GPS scan at Dharavi collection point. Weight confirmed.',weight:'12.4 kg',status:'complete'},
+  {icon:'♻',name:'Sorted',loc:'Dharavi Sorting Centre',time:'14 Nov 2024, 11:15 AM',actor:'Ragpicker: Sunita Devi',actorId:'RP-8834',detail:'Material split logged via SMS code. PET 5.2kg, HDPE 4.1kg, Cardboard 3.1kg.',weight:'12.4 kg',status:'complete'},
+  {icon:'🏪',name:'Aggregated',loc:'Dharavi Scrap Centre',time:'14 Nov 2024, 02:30 PM',actor:'Kabadiwala: Mohan Sharma',actorId:'KB-1122',detail:'Lot LOT-DH-4421 formed. Tablet app confirms receipt. Blockchain tx written.',weight:'12.4 kg',status:'complete'},
+  {icon:'🏭',name:'In Transit to Recycler',loc:'GreenCycle Pvt Ltd, Pune',time:'ETA: 15 Nov 2024',actor:'Matched: GreenCycle Pvt Ltd',actorId:'RC-5501',detail:'Industry matched via supply-demand engine. Purchase order raised.',weight:'12.4 kg',status:'active'},
+];
+
+const BATCH_HASHES = [hex(),hex(),hex(),hex(),hex()];
+
+let simRunning = false;
+let simStep = 4;
+
+function initTracker() {
+  renderTimeline(simStep);
+  renderBlockchainPanel(simStep);
+}
+
+function renderTimeline(activeStep) {
+  const container = document.getElementById('batch-timeline');
+  container.innerHTML = '<div id="timeline-line" style="position:absolute;left:1.1rem;top:1rem;bottom:1rem;width:2px;background:var(--border)"></div>';
+  BATCH_STAGES.forEach((s,i) => {
+    const isComplete = i < activeStep;
+    const isActive = i === activeStep;
+    const isPending = i > activeStep;
+    const dotColor = isComplete?'var(--green)':isActive?'var(--amber)':'var(--border)';
+    const cardBorder = isComplete?'var(--green)':isActive?'var(--amber)':'var(--border)';
+    const pulse = isActive?'animation:pulse-green 1.5s infinite':'';
+    const div = document.createElement('div');
+    div.style.cssText='position:relative;margin-bottom:1.25rem';
+    div.innerHTML=`
+      <div style="position:absolute;left:-1.75rem;top:.3rem;width:22px;height:22px;border-radius:50%;border:2px solid ${dotColor};background:${isComplete?dotColor:'var(--bg-base)'};display:flex;align-items:center;justify-content:center;font-size:.65rem;${pulse};z-index:1">
+        ${isComplete?'✓':''}
+      </div>
+      <div style="background:var(--bg-base);border:1px solid ${cardBorder};border-radius:10px;padding:1rem;transition:border-color .4s">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
+          <span style="font-size:1.1rem">${s.icon}</span>
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.9rem">${s.name}</span>
+          <span style="margin-left:auto" class="badge ${isComplete?'badge-green':isActive?'badge-amber':'badge-red'}">${isComplete?'Complete':isActive?'Active':'Pending'}</span>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.25rem">📍 ${s.loc}</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.5rem">🕐 ${s.time}</div>
+        <div style="font-size:.78rem;color:var(--text-primary);margin-bottom:.25rem">${s.actor} <span class="mono" style="color:var(--teal);font-size:.7rem">(${s.actorId})</span></div>
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.5rem">${s.detail}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="mono" style="font-size:.7rem;color:var(--amber)">${s.weight}</span>
+          ${!isPending?`<button class="btn btn-outline btn-sm" onclick="showChainRecord(${i})" style="font-size:.68rem;padding:.2rem .6rem">View on Chain ↗</button>`:''}
+        </div>
+        ${!isPending?`<div class="mono" style="font-size:.65rem;color:var(--teal);margin-top:.35rem;word-break:break-all">${shortHex(BATCH_HASHES[i])}</div>`:''}
+      </div>`;
+    container.appendChild(div);
+  });
+}
+
+function renderBlockchainPanel(upTo) {
+  const events = document.getElementById('sc-events');
+  const history = document.getElementById('transfer-history');
+  const evNames = ['BatchCreated','WeightRecorded','MaterialSorted','LotAggregated','TransferInitiated'];
+  const actors = ['MW-4421','VH-2291','RP-8834','KB-1122','RC-5501'];
+  events.innerHTML = BATCH_STAGES.slice(0,upTo+1).map((s,i)=>`
+    <div style="display:flex;gap:.75rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--amber)">${evNames[i]}</span>
+      <span style="color:var(--text-secondary)">by ${actors[i]}</span>
+      <span style="color:var(--text-muted);margin-left:auto">blk ${4829441-upTo+i}</span>
+    </div>`).join('');
+  history.innerHTML = BATCH_STAGES.slice(0,upTo+1).map((s,i)=>`
+    <tr>
+      <td class="mono" style="font-size:.68rem;color:var(--text-secondary)">${i===0?'—':actors[i-1]}</td>
+      <td class="mono" style="font-size:.68rem;color:var(--teal)">${actors[i]}</td>
+      <td class="mono" style="font-size:.68rem">${s.weight}</td>
+      <td class="mono" style="font-size:.68rem;color:var(--text-muted)">${4829441-upTo+i}</td>
+    </tr>`).join('');
+}
+
+function showChainRecord(i) {
+  const s = BATCH_STAGES[i];
+  document.getElementById('chain-slideover-content').innerHTML = `
+    <div style="line-height:2;font-size:.72rem">
+      <div style="color:var(--text-secondary)">Event: <span style="color:var(--amber)">${['BatchCreated','WeightRecorded','MaterialSorted','LotAggregated','TransferInitiated'][i]}</span></div>
+      <div style="color:var(--text-secondary)">Block: <span style="color:var(--text-primary)">${4829441-4+i}</span></div>
+      <div style="color:var(--text-secondary)">Tx Hash:</div>
+      <div style="color:var(--teal);word-break:break-all;margin-bottom:.5rem">${BATCH_HASHES[i]}</div>
+      <div style="color:var(--text-secondary)">Actor ID: <span style="color:var(--text-primary)">${s.actorId}</span></div>
+      <div style="color:var(--text-secondary)">Location: <span style="color:var(--text-primary)">${s.loc}</span></div>
+      <div style="color:var(--text-secondary)">Weight: <span style="color:var(--amber)">${s.weight}</span></div>
+      <div style="color:var(--text-secondary)">Timestamp: <span style="color:var(--text-primary)">${s.time}</span></div>
+      <div style="color:var(--text-secondary)">Gas Used: <span class="mono">${rand(21000,85000)}</span></div>
+      <div style="margin-top:.75rem;padding:.75rem;background:var(--bg-base);border-radius:6px;color:var(--green)">✓ Verified — Block confirmed on Hyperledger Fabric Testnet</div>
+    </div>`;
+  openSlideover('chain-slideover');
+}
+
+function trackBatch() {
+  const id = document.getElementById('batch-search').value.trim();
+  document.getElementById('tracker-batch-id').textContent = id;
+  showToast(`Tracking batch ${id}`,'info');
+  renderTimeline(simStep);
+  renderBlockchainPanel(simStep);
+}
+
+function verifyChain() {
+  const bar = document.getElementById('verify-bar');
+  const fill = document.getElementById('verify-fill');
+  const status = document.getElementById('verify-status');
+  bar.style.display='block'; fill.style.width='0'; status.textContent='Verifying...';
+  let w=0;
+  const iv = setInterval(()=>{
+    w+=rand(5,15);
+    fill.style.width=Math.min(w,100)+'%';
+    if(w>=100){clearInterval(iv);status.textContent='✓ Verified — Chain Intact';status.style.color='var(--green)';showToast('Chain integrity verified!','success');}
+  },80);
+}
+
+function runSimulation() {
+  if(simRunning) return;
+  simRunning=true; simStep=-1;
+  renderTimeline(-1); renderBlockchainPanel(-1);
+  const btn = document.querySelector('[onclick="runSimulation()"]');
+  if(btn){btn.disabled=true;btn.textContent='⟳ Running...';}
+  function nextStep() {
+    simStep++;
+    if(simStep>=BATCH_STAGES.length){
+      simRunning=false;
+      if(btn){btn.disabled=false;btn.textContent='▶ Run Simulation';}
+      showToast('Simulation complete — chain verified!','success');
+      return;
+    }
+    renderTimeline(simStep);
+    renderBlockchainPanel(simStep);
+    BATCH_HASHES[simStep]=hex();
+    document.getElementById('bc-block').textContent=fmt(4829441+simStep);
+    document.getElementById('bc-curr').textContent=BATCH_HASHES[simStep];
+    setTimeout(nextStep,1500);
+  }
+  setTimeout(nextStep,400);
+}
+</script>
+
+<script>
+// ─── STAKEHOLDERS ─────────────────────────────────────────────────────────────
+function switchTab(page, tab, btn) {
+  document.querySelectorAll(`#page-${page} .tab-btn`).forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll(`#page-${page} .tab-panel`).forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-'+tab).classList.add('active');
+}
+
+function initStakeholders() {
+  initWaChat();
+  drawRepArc();
+  renderKabadiwala();
+  renderMunicipality();
+  renderIndustry();
+}
+
+// WHATSAPP CHAT
+const WA_INIT = [
+  {bot:true,msg:"Namaste Sunita 👋 Send material pickup to log.\nFormat: [TYPE] [KG]\nExample: PET 5.2 HDPE 4.1 CARD 3.1"},
+  {bot:false,msg:"PET 5.2 HDPE 4.1 CARD 3.1"},
+  {bot:true,msg:"✓ Logged. Batch TF-MUM-2024-00847 created.\nWeight: 12.4kg\nEstimated value: ₹186\nKabadiwala Mohan (⭐4.8) is 0.4km away."},
+  {bot:false,msg:"ok"},
+  {bot:true,msg:"📍 Mohan confirmed pickup.\nYou'll receive ₹186 within 2 hours via UPI.\nTransaction ID: UPI-TF-847291"},
+];
+
+function initWaChat() {
+  const chat = document.getElementById('wa-chat');
+  chat.innerHTML='';
+  WA_INIT.forEach(m=>chat.appendChild(waBubble(m.bot,m.msg)));
+}
+
+function waBubble(isBot, msg) {
+  const div = document.createElement('div');
+  div.style.cssText=`max-width:80%;padding:.55rem .85rem;border-radius:8px;font-size:.8rem;line-height:1.5;align-self:${isBot?'flex-start':'flex-end'};background:${isBot?'#1f2c34':'#005c4b'};border-radius:${isBot?'0 8px 8px 8px':'8px 0 8px 8px'};white-space:pre-line`;
+  div.innerHTML=msg+`<div style="font-size:.62rem;color:#8696a0;text-align:right;margin-top:.2rem">${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>`;
+  return div;
+}
+
+function waSend() {
+  const inp = document.getElementById('wa-input');
+  const msg = inp.value.trim();
+  if(!msg) return;
+  const chat = document.getElementById('wa-chat');
+  chat.appendChild(waBubble(false,msg));
+  inp.value='';
+  setTimeout(()=>{
+    const typing = document.createElement('div');
+    typing.style.cssText='align-self:flex-start;background:#1f2c34;border-radius:0 8px 8px 8px;padding:.5rem .85rem;font-size:.8rem;color:var(--text-secondary)';
+    typing.textContent='typing...'; chat.appendChild(typing);
+    chat.scrollTop=chat.scrollHeight;
+    setTimeout(()=>{
+      typing.remove();
+      chat.appendChild(waBubble(true,'✓ Received. Processing your input...\nPlease wait for confirmation.'));
+      chat.scrollTop=chat.scrollHeight;
+    },1200);
+  },600);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function simulatePickup() {
+  const chat = document.getElementById('wa-chat');
+  const mat = pick(['PET','HDPE','CARD']);
+  const kg = randF(2,8);
+  const val = Math.floor(kg*(mat==='PET'?15:mat==='HDPE'?11:5));
+  const batchId = `TF-MUM-2024-0${rand(1000,9999)}`;
+  const typing = document.createElement('div');
+  typing.style.cssText='align-self:flex-start;background:#1f2c34;border-radius:0 8px 8px 8px;padding:.5rem .85rem;font-size:.8rem;color:var(--text-secondary)';
+  typing.textContent='typing...'; chat.appendChild(typing);
+  chat.scrollTop=chat.scrollHeight;
+  setTimeout(()=>{
+    typing.remove();
+    chat.appendChild(waBubble(true,`New pickup available near you!\n📍 ${pick(LOCATIONS)}\n${mat} ${kg}kg available\nEstimated: ₹${val}`));
+    chat.scrollTop=chat.scrollHeight;
+    setTimeout(()=>{
+      chat.appendChild(waBubble(false,`${mat} ${kg}`));
+      chat.scrollTop=chat.scrollHeight;
+      setTimeout(()=>{
+        chat.appendChild(waBubble(true,`✓ Logged. Batch ${batchId} created.\nWeight: ${kg}kg · Value: ₹${val}\nKabadiwala ${pick(['Mohan','Ravi','Suresh'])} (⭐${randF(4.2,5.0)}) is ${randF(0.2,1.5)}km away.`));
+        chat.scrollTop=chat.scrollHeight;
+      },1000);
+    },800);
+  },1000);
+}
+
+function drawRepArc() {
+  const c = document.getElementById('rep-arc');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const cx=50,cy=55,r=40;
+  ctx.clearRect(0,0,100,60);
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,2*Math.PI);
+  ctx.strokeStyle='var(--border)'; ctx.lineWidth=6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,Math.PI+(0.94*Math.PI));
+  ctx.strokeStyle='var(--amber)'; ctx.lineWidth=6; ctx.lineCap='round'; ctx.stroke();
+}
+
+// KABADIWALA
+function renderKabadiwala() {
+  const lots = [
+    {id:'LOT-DH-4421',from:'Sunita Devi',mat:'PET, HDPE, CARD',wt:'12.4 kg',status:'Received'},
+    {id:'LOT-DH-4418',from:'Raju Yadav',mat:'Metal Scrap',wt:'8.2 kg',status:'Pending'},
+    {id:'LOT-DH-4415',from:'Meena Bai',mat:'Cardboard',wt:'22.1 kg',status:'Received'},
+    {id:'LOT-DH-4410',from:'Arjun Nair',mat:'PET Bottles',wt:'15.7 kg',status:'In Transit'},
+  ];
+  document.getElementById('kab-lots').innerHTML = lots.map(l=>`<tr>
+    <td class="mono" style="color:var(--amber)">${l.id}</td>
+    <td>${l.from}</td><td style="color:var(--text-secondary)">${l.mat}</td>
+    <td class="mono">${l.wt}</td>
+    <td><span class="badge ${l.status==='Received'?'badge-green':l.status==='Pending'?'badge-amber':'badge-teal'}">${l.status}</span></td>
+  </tr>`).join('');
+
+  const stock = [{mat:'PET Bottles',qty:'124 kg',val:'₹1,860'},{mat:'HDPE Plastic',qty:'87 kg',val:'₹957'},{mat:'Cardboard',qty:'210 kg',val:'₹1,050'},{mat:'Metal Scrap',qty:'34 kg',val:'₹1,360'}];
+  document.getElementById('kab-stock').innerHTML = stock.map(s=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
+      <span>${s.mat}</span><span class="mono" style="color:var(--text-secondary)">${s.qty}</span><span class="mono" style="color:var(--green)">${s.val}</span>
+    </div>`).join('');
+
+  document.getElementById('kab-alerts').innerHTML = [
+    {msg:'PET price up 8% in Pune market',c:'badge-green'},
+    {msg:'HDPE demand surge — Delhi buyers active',c:'badge-amber'},
+    {msg:'Cardboard rate stable at ₹5/kg',c:'badge-teal'},
+  ].map(a=>`<div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border)"><span class="badge ${a.c}">!</span>${a.msg}</div>`).join('');
+
+  drawKabBar();
+}
+
+function drawKabBar() {
+  const c = document.getElementById('kab-bar');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const mats=[{l:'PET',c:'#60a5fa'},{l:'HDPE',c:'#a78bfa'},{l:'CARD',c:'#f59e0b'}];
+  const data=days.map(()=>mats.map(()=>rand(200,1200)));
+  const bw=30,gap=12,groupW=mats.length*bw+(mats.length-1)*4;
+  const totalW=days.length*(groupW+gap);
+  const startX=(W-totalW)/2;
+  const maxVal=1400;
+  ctx.fillStyle='var(--text-muted)';
+  ctx.font='10px Inter';
+  days.forEach((d,gi)=>{
+    const gx=startX+gi*(groupW+gap);
+    mats.forEach((m,mi)=>{
+      const x=gx+mi*(bw+4);
+      const barH=(data[gi][mi]/maxVal)*(H-30);
+      ctx.fillStyle=m.c;
+      ctx.fillRect(x,H-20-barH,bw,barH);
+    });
+    ctx.fillStyle='#8b949e';
+    ctx.fillText(d,gx+groupW/2-8,H-4);
+  });
+  mats.forEach((m,i)=>{
+    ctx.fillStyle=m.c;
+    ctx.fillRect(10+i*60,8,10,10);
+    ctx.fillStyle='#8b949e';
+    ctx.fillText(m.l,24+i*60,17);
+  });
+}
+</script>
+
+<script>
+// ─── MUNICIPALITY ─────────────────────────────────────────────────────────────
+function renderMunicipality() {
+  const kpis = [
+    {l:'Trucks Deployed',v:'142/160',c:'var(--amber)'},
+    {l:'Total Weight Today',v:'847 T',c:'var(--teal)'},
+    {l:'Compliance Rate',v:'78%',c:'var(--green)'},
+    {l:'Missed Collections',v:'14',c:'var(--red)'},
+  ];
+  document.getElementById('muni-kpis').innerHTML = kpis.map(k=>`
+    <div class="card" style="text-align:center">
+      <div style="font-size:1.4rem;font-weight:700;font-family:'Space Grotesk',sans-serif;color:${k.c}">${k.v}</div>
+      <div style="font-size:.75rem;color:var(--text-secondary);margin-top:.25rem">${k.l}</div>
+    </div>`).join('');
+
+  const zones = [
+    {z:'Dharavi',trucks:'8/10',wt:'62T',pct:88,s:'optimal'},
+    {z:'Andheri E',trucks:'6/8',wt:'48T',pct:75,s:'optimal'},
+    {z:'Bandra',trucks:'5/7',wt:'41T',pct:71,s:'optimal'},
+    {z:'Kurla',trucks:'4/8',wt:'29T',pct:52,s:'delayed'},
+    {z:'Malad',trucks:'7/9',wt:'55T',pct:82,s:'optimal'},
+    {z:'Borivali',trucks:'3/7',wt:'22T',pct:43,s:'delayed'},
+    {z:'Thane',trucks:'6/8',wt:'47T',pct:74,s:'optimal'},
+    {z:'Navi Mumbai',trucks:'2/6',wt:'14T',pct:31,s:'critical'},
+    {z:'Worli',trucks:'5/6',wt:'39T',pct:83,s:'optimal'},
+    {z:'Dadar',trucks:'4/7',wt:'31T',pct:57,s:'delayed'},
+    {z:'Chembur',trucks:'1/5',wt:'8T',pct:22,s:'critical'},
+    {z:'Mulund',trucks:'6/7',wt:'44T',pct:79,s:'optimal'},
+  ];
+  document.getElementById('muni-grid').innerHTML = zones.map(z=>{
+    const bg = z.s==='optimal'?'rgba(74,222,128,.06)':z.s==='delayed'?'rgba(245,158,11,.06)':'rgba(248,113,113,.06)';
+    const bc = z.s==='optimal'?'rgba(74,222,128,.3)':z.s==='delayed'?'rgba(245,158,11,.3)':'rgba(248,113,113,.3)';
+    const pc = z.s==='optimal'?'var(--green)':z.s==='delayed'?'var(--amber)':'var(--red)';
+    return `<div style="background:${bg};border:1px solid ${bc};border-radius:10px;padding:.85rem">
+      <div style="font-weight:600;font-size:.82rem;margin-bottom:.35rem">${z.z}</div>
+      <div style="font-size:.72rem;color:var(--text-secondary)">Trucks: ${z.trucks}</div>
+      <div style="font-size:.72rem;color:var(--text-secondary)">Weight: ${z.wt}</div>
+      <div style="margin:.4rem 0"><div class="progress-track" style="height:4px"><div class="progress-fill" style="width:${z.pct}%;background:${pc}"></div></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="mono" style="font-size:.68rem;color:${pc}">${z.pct}%</span>
+        ${z.s==='critical'?`<button class="btn btn-sm" style="background:var(--red);color:#fff;padding:.15rem .5rem;font-size:.65rem;border:none;cursor:pointer" onclick="showToast('Alert dispatched for ${z.z}','info')">Alert</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── INDUSTRY ─────────────────────────────────────────────────────────────────
+const IND_LOTS = Array.from({length:15},(_,i)=>{
+  const mat = pick(MATERIALS);
+  const city = pick(CITIES);
+  const grade = pick(['A','A','B','B','C']);
+  const qty = rand(100,2000);
+  const priceMap = {'PET Bottles':rand(12,18),'HDPE Plastic':rand(8,14),'Cardboard':rand(4,7),'Metal Scrap':rand(28,45),'E-Waste':rand(20,35),'Glass':rand(3,6)};
+  return {id:`LOT-${city.slice(0,3).toUpperCase()}-${rand(1000,9999)}`,mat,qty,grade,city,rating:randF(3.8,5.0),price:priceMap[mat],dist:rand(50,800),seller:pick(COMPANIES)};
+});
+
+let indCurrentPage = 0;
+let indFiltered = [...IND_LOTS];
+
+function renderIndustry() {
+  document.getElementById('ind-kpis').innerHTML = [
+    {l:'Active Requests',v:'47',c:'var(--amber)'},
+    {l:'Matched Lots',v:'23',c:'var(--green)'},
+    {l:'Pending Deliveries',v:'12',c:'var(--teal)'},
+  ].map(k=>`<div class="card" style="text-align:center"><div style="font-size:1.6rem;font-weight:700;font-family:'Space Grotesk',sans-serif;color:${k.c}">${k.v}</div><div style="font-size:.78rem;color:var(--text-secondary);margin-top:.25rem">${k.l}</div></div>`).join('');
+  renderIndustryTable();
+}
+
+function renderIndustryTable() {
+  const matF = document.getElementById('ind-filter-mat').value;
+  const cityF = document.getElementById('ind-filter-city').value;
+  const gradeF = document.getElementById('ind-filter-grade').value;
+  indFiltered = IND_LOTS.filter(l=>
+    (!matF||l.mat===matF)&&(!cityF||l.city===cityF)&&(!gradeF||l.grade===gradeF)
+  );
+  indCurrentPage=0;
+  renderIndPage();
+}
+
+function renderIndPage() {
+  const perPage=5;
+  const start=indCurrentPage*perPage;
+  const page=indFiltered.slice(start,start+perPage);
+  document.getElementById('ind-count').textContent=`${indFiltered.length} lots found`;
+  document.getElementById('ind-page-info').textContent=`Showing ${start+1}–${Math.min(start+perPage,indFiltered.length)} of ${indFiltered.length}`;
+  document.getElementById('ind-prev').disabled=indCurrentPage===0;
+  document.getElementById('ind-next').disabled=start+perPage>=indFiltered.length;
+  document.getElementById('ind-tbody').innerHTML = page.map(l=>`<tr>
+    <td class="mono" style="color:var(--amber);font-size:.72rem">${l.id}</td>
+    <td>${l.mat}</td>
+    <td class="mono">${fmt(l.qty)}</td>
+    <td><span class="badge ${l.grade==='A'?'badge-green':l.grade==='B'?'badge-amber':'badge-red'}">${l.grade}</span></td>
+    <td>${l.city}</td>
+    <td style="color:var(--amber)">★ ${l.rating}</td>
+    <td class="mono" style="color:var(--green)">₹${l.price}</td>
+    <td><button class="btn btn-outline btn-sm" onclick="showQuote(${IND_LOTS.indexOf(l)})">Request Quote</button></td>
+  </tr>`).join('');
+}
+
+function indPage(dir) {
+  indCurrentPage+=dir;
+  renderIndPage();
+}
+
+function showQuote(idx) {
+  const l = IND_LOTS[idx];
+  document.getElementById('quote-slideover-content').innerHTML = `
+    <div style="font-size:.82rem;display:flex;flex-direction:column;gap:.6rem">
+      <div class="card" style="margin-bottom:.5rem">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:.5rem">${l.mat}</div>
+        <div class="mono" style="color:var(--amber);font-size:.75rem;margin-bottom:.75rem">${l.id}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Quantity</div><div class="mono">${fmt(l.qty)} kg</div></div>
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Price/kg</div><div class="mono" style="color:var(--green)">₹${l.price}</div></div>
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Grade</div><span class="badge ${l.grade==='A'?'badge-green':l.grade==='B'?'badge-amber':'badge-red'}">${l.grade}</span></div>
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Total Value</div><div class="mono" style="color:var(--amber)">₹${fmt(l.qty*l.price)}</div></div>
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Origin</div><div>${l.city}</div></div>
+          <div><div style="color:var(--text-secondary);font-size:.72rem">Distance</div><div class="mono">${l.dist} km</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:.5rem">Seller: ${l.seller}</div>
+        <div style="color:var(--amber)">★ ${l.rating} / 5.0</div>
+        <div style="color:var(--text-secondary);font-size:.75rem;margin-top:.25rem">Verified supplier · ${rand(12,84)} transactions</div>
+      </div>
+      <button class="btn btn-amber" style="width:100%;justify-content:center" onclick="closeSlideover('quote-slideover');showToast('Order placed for ${l.id}!','success')">Place Order</button>
+    </div>`;
+  openSlideover('quote-slideover');
+}
+</script>
+
+<script>
+// ─── NETWORK MAP ──────────────────────────────────────────────────────────────
+const CITY_NODES = [
+  {name:'Mumbai',x:0.18,y:0.62,r:28,status:'optimal',workers:842,batches:1247,nodes:12,lat:4.2},
+  {name:'Delhi',x:0.38,y:0.22,r:26,status:'optimal',workers:731,batches:1089,nodes:10,lat:3.8},
+  {name:'Bengaluru',x:0.32,y:0.75,r:22,status:'optimal',workers:524,batches:834,nodes:8,lat:4.5},
+  {name:'Chennai',x:0.42,y:0.80,r:18,status:'degraded',workers:398,batches:612,nodes:7,lat:5.1},
+  {name:'Hyderabad',x:0.38,y:0.65,r:16,status:'optimal',workers:312,batches:489,nodes:6,lat:4.0},
+  {name:'Pune',x:0.22,y:0.67,r:14,status:'optimal',workers:287,batches:421,nodes:5,lat:3.9},
+  {name:'Ahmedabad',x:0.20,y:0.42,r:13,status:'degraded',workers:241,batches:378,nodes:4,lat:4.8},
+  {name:'Kolkata',x:0.68,y:0.42,r:20,status:'offline',workers:507,batches:723,nodes:6,lat:6.2},
+];
+
+const ROUTES = [
+  [0,5],[0,2],[1,7],[1,4],[2,3],[4,2],[0,6],[1,6]
+];
+
+let mapAnimFrame=0;
+let dashOffset=0;
+
+function drawNetworkMap() {
+  const canvas = document.getElementById('network-map');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+
+  function frame() {
+    ctx.clearRect(0,0,W,H);
+    // India outline (simplified polygon)
+    ctx.beginPath();
+    const outline=[[0.15,0.1],[0.55,0.05],[0.72,0.15],[0.78,0.3],[0.72,0.45],[0.75,0.55],[0.65,0.65],[0.55,0.85],[0.45,0.95],[0.35,0.9],[0.25,0.85],[0.15,0.75],[0.08,0.6],[0.1,0.45],[0.15,0.3],[0.15,0.1]];
+    outline.forEach(([px,py],i)=>i===0?ctx.moveTo(px*W,py*H):ctx.lineTo(px*W,py*H));
+    ctx.closePath();
+    ctx.fillStyle='rgba(22,27,34,0.6)';
+    ctx.fill();
+    ctx.strokeStyle='#30363d';
+    ctx.lineWidth=1.5;
+    ctx.stroke();
+
+    // Routes
+    dashOffset=(dashOffset+0.5)%20;
+    ROUTES.forEach(([a,b])=>{
+      const na=CITY_NODES[a], nb=CITY_NODES[b];
+      ctx.beginPath();
+      ctx.moveTo(na.x*W,na.y*H);
+      ctx.lineTo(nb.x*W,nb.y*H);
+      ctx.strokeStyle='rgba(45,212,191,0.4)';
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([6,8]);
+      ctx.lineDashOffset=-dashOffset;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // City nodes
+    CITY_NODES.forEach(n=>{
+      const x=n.x*W, y=n.y*H;
+      const color=n.status==='optimal'?'#4ade80':n.status==='degraded'?'#f59e0b':'#f87171';
+      // Glow
+      const grd=ctx.createRadialGradient(x,y,0,x,y,n.r*2);
+      grd.addColorStop(0,color.replace(')',',0.3)').replace('rgb','rgba'));
+      grd.addColorStop(1,'transparent');
+      ctx.beginPath(); ctx.arc(x,y,n.r*2,0,Math.PI*2);
+      ctx.fillStyle=grd; ctx.fill();
+      // Circle
+      ctx.beginPath(); ctx.arc(x,y,n.r,0,Math.PI*2);
+      ctx.fillStyle=color+'33'; ctx.fill();
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+      // Label
+      ctx.fillStyle='#f0f6fc';
+      ctx.font='bold 11px Space Grotesk, sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(n.name,x,y+n.r+14);
+    });
+
+    mapAnimFrame=requestAnimationFrame(frame);
+  }
+  if(mapAnimFrame) cancelAnimationFrame(mapAnimFrame);
+  frame();
+
+  // Click handler
+  canvas.onclick = function(e) {
+    const rect=canvas.getBoundingClientRect();
+    const scaleX=canvas.width/rect.width;
+    const scaleY=canvas.height/rect.height;
+    const mx=(e.clientX-rect.left)*scaleX;
+    const my=(e.clientY-rect.top)*scaleY;
+    CITY_NODES.forEach(n=>{
+      const dx=mx-n.x*W, dy=my-n.y*H;
+      if(Math.sqrt(dx*dx+dy*dy)<n.r+8) showCityTooltip(n,e.clientX,e.clientY);
+    });
+  };
+
+  // Active routes
+  document.getElementById('active-routes').innerHTML = ROUTES.map(([a,b])=>`
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--teal);flex-shrink:0"></span>
+      <span style="color:var(--text-secondary)">${CITY_NODES[a].name} → ${CITY_NODES[b].name}</span>
+      <span class="mono" style="margin-left:auto;font-size:.68rem;color:var(--text-muted)">${rand(1,8)} lots</span>
+    </div>`).join('');
+}
+
+function showCityTooltip(n, cx, cy) {
+  const tip = document.getElementById('city-tooltip');
+  const canvas = document.getElementById('network-map');
+  const rect = canvas.getBoundingClientRect();
+  tip.style.display='block';
+  tip.style.left=(cx-rect.left+10)+'px';
+  tip.style.top=(cy-rect.top-10)+'px';
+  tip.innerHTML=`<div style="font-weight:700;margin-bottom:.4rem;font-family:'Space Grotesk',sans-serif">${n.name}</div>
+    <div style="color:var(--text-secondary)">Workers: <span class="mono">${fmt(n.workers)}</span></div>
+    <div style="color:var(--text-secondary)">Batches Today: <span class="mono">${fmt(n.batches)}</span></div>
+    <div style="color:var(--text-secondary)">BC Nodes: <span class="mono">${n.nodes}</span></div>
+    <div style="color:var(--text-secondary)">Latency: <span class="mono">${n.lat}s</span></div>
+    <div style="margin-top:.35rem"><span class="badge ${n.status==='optimal'?'badge-green':n.status==='degraded'?'badge-amber':'badge-red'}">${n.status}</span></div>`;
+  setTimeout(()=>tip.style.display='none',3000);
+}
+</script>
+
+<script>
+// ─── ANALYTICS CHARTS ─────────────────────────────────────────────────────────
+let analyticsRange = '30d';
+let lineAnimProgress = 0;
+let lineAnimId = null;
+
+function setRange(r, btn) {
+  analyticsRange = r;
+  document.querySelectorAll('.active-range').forEach(b=>b.classList.remove('active-range'));
+  btn.classList.add('active-range');
+  drawAllCharts();
+}
+
+function drawAllCharts() {
+  drawLineChart();
+  drawHBarChart();
+  drawAreaChart();
+  drawScatterChart();
+}
+
+// LINE CHART
+function drawLineChart() {
+  const c = document.getElementById('line-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  const pad={top:20,right:20,bottom:40,left:55};
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'];
+  const collected=[420,480,510,560,590,640,680,720,760,810,847];
+  const recycled=[180,210,240,270,300,330,370,410,450,490,520];
+
+  ctx.clearRect(0,0,W,H);
+  const cW=W-pad.left-pad.right, cH=H-pad.top-pad.bottom;
+  const maxV=900;
+
+  // Grid
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.top+cH-(i/4)*cH;
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px JetBrains Mono,monospace'; ctx.textAlign='right';
+    ctx.fillText(Math.round(i/4*maxV),pad.left-6,y+4);
+  }
+
+  // X labels
+  months.forEach((m,i)=>{
+    const x=pad.left+i*(cW/(months.length-1));
+    ctx.fillStyle='#8b949e'; ctx.font='10px Inter,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(m,x,H-pad.bottom+16);
+  });
+
+  function drawLine(data, color, fill) {
+    const pts=data.map((v,i)=>({x:pad.left+i*(cW/(data.length-1)),y:pad.top+cH-(v/maxV)*cH}));
+    if(fill){
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pad.top+cH);
+      pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,pad.top+cH); ctx.closePath();
+      ctx.fillStyle=color.replace(')',',0.1)').replace('rgb','rgba'); ctx.fill();
+    }
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+    ctx.strokeStyle=color; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.stroke();
+    pts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();});
+  }
+
+  drawLine(collected,'#f59e0b',true);
+  drawLine(recycled,'#2dd4bf',true);
+
+  // Legend
+  ctx.fillStyle='#f59e0b'; ctx.fillRect(pad.left,6,12,8);
+  ctx.fillStyle='#8b949e'; ctx.font='11px Inter'; ctx.textAlign='left'; ctx.fillText('Total Collected',pad.left+16,14);
+  ctx.fillStyle='#2dd4bf'; ctx.fillRect(pad.left+130,6,12,8);
+  ctx.fillStyle='#8b949e'; ctx.fillText('Actually Recycled',pad.left+146,14);
+}
+
+// HORIZONTAL BAR CHART
+function drawHBarChart() {
+  const c = document.getElementById('hbar-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const data=[
+    {l:'PET Bottles',v:67,c:'#60a5fa'},
+    {l:'HDPE Plastic',v:54,c:'#a78bfa'},
+    {l:'Metal Scrap',v:71,c:'#4ade80'},
+    {l:'E-Waste',v:38,c:'#f87171'},
+    {l:'Cardboard',v:82,c:'#f59e0b'},
+    {l:'Glass',v:29,c:'#2dd4bf'},
+  ];
+  const bh=22, gap=8, startY=10, labelW=90;
+  data.forEach((d,i)=>{
+    const y=startY+i*(bh+gap);
+    ctx.fillStyle='#8b949e'; ctx.font='11px Inter'; ctx.textAlign='right';
+    ctx.fillText(d.l,labelW-4,y+bh/2+4);
+    ctx.fillStyle='#1f2937';
+    ctx.fillRect(labelW,y,W-labelW-50,bh);
+    ctx.fillStyle=d.c;
+    ctx.fillRect(labelW,y,(W-labelW-50)*(d.v/100),bh);
+    ctx.fillStyle='#f0f6fc'; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='left';
+    ctx.fillText(d.v+'%',W-46,y+bh/2+4);
+  });
+}
+
+// AREA CHART
+function drawAreaChart() {
+  const c = document.getElementById('area-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const pad={top:15,right:15,bottom:30,left:45};
+  const months=['J','F','M','A','M','J','J','A','S','O','N','D'];
+  const data=[120,280,520,840,1100,1480,1920,2380,2840,3200,3620,3842];
+  const maxV=4200;
+  const cW=W-pad.left-pad.right, cH=H-pad.top-pad.bottom;
+  const pts=data.map((v,i)=>({x:pad.left+i*(cW/(data.length-1)),y:pad.top+cH-(v/maxV)*cH}));
+
+  // Grid
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+  for(let i=0;i<=3;i++){
+    const y=pad.top+cH-(i/3)*cH;
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='9px JetBrains Mono'; ctx.textAlign='right';
+    ctx.fillText(Math.round(i/3*maxV/1000)+'k',pad.left-4,y+3);
+  }
+
+  // Area fill
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pad.top+cH);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x,pad.top+cH); ctx.closePath();
+  ctx.fillStyle='rgba(45,212,191,0.15)'; ctx.fill();
+
+  // Line
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle='#2dd4bf'; ctx.lineWidth=2; ctx.stroke();
+
+  // X labels
+  months.forEach((m,i)=>{
+    const x=pad.left+i*(cW/(months.length-1));
+    ctx.fillStyle='#8b949e'; ctx.font='9px Inter'; ctx.textAlign='center';
+    ctx.fillText(m,x,H-pad.bottom+14);
+  });
+}
+
+// SCATTER CHART
+function drawScatterChart() {
+  const c = document.getElementById('scatter-chart');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  const pad={top:20,right:20,bottom:40,left:55};
+  const cW=W-pad.left-pad.right, cH=H-pad.top-pad.bottom;
+  const cities=[
+    {name:'Mumbai',workers:842,rate:78,vol:847,region:'West',c:'#f59e0b'},
+    {name:'Delhi',workers:731,rate:65,vol:720,region:'North',c:'#60a5fa'},
+    {name:'Bengaluru',workers:524,rate:71,vol:580,region:'South',c:'#2dd4bf'},
+    {name:'Chennai',workers:398,rate:58,vol:420,region:'South',c:'#2dd4bf'},
+    {name:'Hyderabad',workers:312,rate:62,vol:380,region:'South',c:'#2dd4bf'},
+    {name:'Pune',workers:287,rate:74,vol:310,region:'West',c:'#f59e0b'},
+    {name:'Ahmedabad',workers:241,rate:49,vol:260,region:'West',c:'#f59e0b'},
+    {name:'Kolkata',workers:507,rate:41,vol:490,region:'East',c:'#a78bfa'},
+  ];
+  const maxW=900, maxR=100;
+
+  // Grid
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=pad.top+cH-(i/4)*cH;
+    ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(W-pad.right,y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px JetBrains Mono'; ctx.textAlign='right';
+    ctx.fillText(i*25+'%',pad.left-4,y+4);
+  }
+  for(let i=0;i<=4;i++){
+    const x=pad.left+i*(cW/4);
+    ctx.beginPath(); ctx.moveTo(x,pad.top); ctx.lineTo(x,pad.top+cH); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px JetBrains Mono'; ctx.textAlign='center';
+    ctx.fillText(Math.round(i*maxW/4),x,H-pad.bottom+14);
+  }
+
+  cities.forEach(city=>{
+    const x=pad.left+(city.workers/maxW)*cW;
+    const y=pad.top+cH-(city.rate/maxR)*cH;
+    const r=Math.max(8,city.vol/50);
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=city.c+'55'; ctx.fill();
+    ctx.strokeStyle=city.c; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='#f0f6fc'; ctx.font='bold 10px Space Grotesk'; ctx.textAlign='center';
+    ctx.fillText(city.name,x,y-r-4);
+  });
+
+  // Axis labels
+  ctx.fillStyle='#8b949e'; ctx.font='11px Inter'; ctx.textAlign='center';
+  ctx.fillText('Number of Workers',pad.left+cW/2,H-2);
+  ctx.save(); ctx.translate(12,pad.top+cH/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('Recovery Rate (%)',0,0); ctx.restore();
+}
+</script>
+
+<script>
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+function testConnection() {
+  const bar = document.getElementById('conn-bar');
+  const fill = document.getElementById('conn-fill');
+  const status = document.getElementById('conn-status');
+  bar.style.display='block'; fill.style.width='0'; status.textContent='Pinging node...'; status.style.color='';
+  let w=0;
+  const iv=setInterval(()=>{
+    w+=rand(8,18);
+    fill.style.width=Math.min(w,100)+'%';
+    if(w>=100){clearInterval(iv);status.textContent='✓ Connected — 42ms latency';status.style.color='var(--green)';showToast('Blockchain node connected!','success');}
+  },60);
+}
+
+// ─── RESPONSIVE SIDEBAR ───────────────────────────────────────────────────────
+// Sidebar already handles hover via CSS. On mobile, add click toggle.
+if(window.innerWidth<768){
+  document.getElementById('sidebar').style.width='0';
+  document.getElementById('main').style.marginLeft='0';
+  document.getElementById('topbar').style.left='0';
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// Keyboard shortcut hint
+document.getElementById('global-search').addEventListener('focus',()=>{
+  document.getElementById('global-search').placeholder='> Search batches, workers... (Esc to close)';
+});
+document.getElementById('global-search').addEventListener('blur',()=>{
+  document.getElementById('global-search').placeholder='> Search batches, workers...';
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') document.getElementById('global-search').blur();
+});
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o=>{
+  o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('open'); });
+});
+
+// Animate .active-range button style
+document.querySelectorAll('.active-range').forEach(b=>{
+  b.style.borderColor='var(--amber)';
+  b.style.color='var(--amber)';
+});
+
+// Override setRange to also style buttons
+const _setRange = setRange;
+window.setRange = function(r,btn) {
+  _setRange(r,btn);
+  document.querySelectorAll('#page-analytics .btn').forEach(b=>{
+    b.style.borderColor=''; b.style.color='';
+  });
+  btn.style.borderColor='var(--amber)';
+  btn.style.color='var(--amber)';
+};
+</script>
+</body>
+</html>
