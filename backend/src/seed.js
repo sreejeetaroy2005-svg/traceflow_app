@@ -1,0 +1,102 @@
+require('dotenv').config();
+const { initDb, run, all } = require('./db');
+const { genBatchId, genLotId, genTxHash, uuid } = require('./helpers');
+
+const CITIES    = ['Mumbai','Delhi','Bengaluru','Chennai','Hyderabad','Pune','Ahmedabad','Kolkata'];
+const MATERIALS = ['PET Bottles','HDPE Plastic','Cardboard','E-Waste','Glass','Metal Scrap'];
+const PRICES    = {'PET Bottles':15,'HDPE Plastic':11,'Cardboard':5,'Metal Scrap':36,'E-Waste':28,'Glass':4};
+const STAGES    = ['generated','collected','sorted','aggregated','in_transit','delivered'];
+
+const WORKERS = [
+  {id:'RP-8834',name:'Sunita Devi',role:'ragpicker',city:'Mumbai',phone:'+919876543210',reputation:94},
+  {id:'RP-2211',name:'Raju Yadav',role:'ragpicker',city:'Mumbai',phone:'+919876543211',reputation:82},
+  {id:'RP-3301',name:'Meena Bai',role:'ragpicker',city:'Delhi',phone:'+919876543212',reputation:78},
+  {id:'RP-4412',name:'Arjun Nair',role:'ragpicker',city:'Bengaluru',phone:'+919876543213',reputation:88},
+  {id:'RP-5523',name:'Priya Kumari',role:'ragpicker',city:'Chennai',phone:'+919876543214',reputation:91},
+  {id:'RP-6634',name:'Deepak Yadav',role:'ragpicker',city:'Pune',phone:'+919876543215',reputation:75},
+  {id:'KB-1122',name:'Mohan Sharma',role:'kabadiwala',city:'Mumbai',phone:'+919876543220',reputation:96},
+  {id:'KB-2233',name:'Suresh Gupta',role:'kabadiwala',city:'Delhi',phone:'+919876543221',reputation:89},
+  {id:'KB-3344',name:'Ramesh Pillai',role:'kabadiwala',city:'Bengaluru',phone:'+919876543222',reputation:92},
+  {id:'KB-4455',name:'Anita Joshi',role:'kabadiwala',city:'Pune',phone:'+919876543223',reputation:85},
+  {id:'MW-4421',name:'Ramesh Patil',role:'municipal',city:'Mumbai',phone:'+919876543230',reputation:80},
+  {id:'MW-5532',name:'Kavita Rao',role:'municipal',city:'Delhi',phone:'+919876543231',reputation:77},
+  {id:'RC-5501',name:'GreenCycle Pvt Ltd',role:'industry',city:'Pune',phone:'+919876543240',reputation:98},
+  {id:'RC-5502',name:'EcoRevive Industries',role:'industry',city:'Mumbai',phone:'+919876543241',reputation:95},
+  {id:'RC-5503',name:'RecycleMart',role:'industry',city:'Delhi',phone:'+919876543242',reputation:90},
+  {id:'RC-5504',name:'WasteWorth India',role:'industry',city:'Bengaluru',phone:'+919876543243',reputation:93},
+];
+
+async function seed() {
+  await initDb();
+  console.log('🌱 Seeding TraceFlow database...');
+
+  // Clear
+  run('DELETE FROM orders');
+  run('DELETE FROM lots');
+  run('DELETE FROM transactions');
+  run('DELETE FROM batch_materials');
+  run('DELETE FROM batches');
+  run('DELETE FROM workers');
+
+  // Workers
+  WORKERS.forEach(w =>
+    run('INSERT INTO workers (id,name,role,city,phone,reputation) VALUES (?,?,?,?,?,?)',
+      [w.id, w.name, w.role, w.city, w.phone, w.reputation]));
+  console.log(`✓ ${WORKERS.length} workers`);
+
+  // Batches
+  const ragpickers  = WORKERS.filter(w => w.role === 'ragpicker');
+  const kabadiwalas = WORKERS.filter(w => w.role === 'kabadiwala');
+  let batchCount = 0;
+
+  for (let i = 0; i < 80; i++) {
+    const city      = CITIES[i % CITIES.length];
+    const stageIdx  = Math.floor(Math.random() * STAGES.length);
+    const status    = STAGES[stageIdx];
+    const mats      = MATERIALS.slice(0, Math.floor(Math.random()*3)+1)
+                        .map(m => ({ material: m, weight_kg: parseFloat((Math.random()*10+1).toFixed(1)) }));
+    const totalW    = parseFloat(mats.reduce((s,m)=>s+m.weight_kg,0).toFixed(1));
+    const daysAgo   = Math.floor(Math.random() * 30);
+    const createdAt = new Date(Date.now() - daysAgo * 86400000).toISOString();
+    const batchId   = genBatchId(city);
+
+    run('INSERT INTO batches (id,city,status,total_weight,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+      [batchId, city, status, totalW, createdAt, createdAt]);
+    mats.forEach(m =>
+      run('INSERT INTO batch_materials (batch_id,material,weight_kg) VALUES (?,?,?)', [batchId, m.material, m.weight_kg]));
+
+    const rp = ragpickers.find(w => w.city === city) || ragpickers[0];
+    const kb = kabadiwalas.find(w => w.city === city) || kabadiwalas[0];
+    const toActors   = ['MW-4421', rp.id, kb.id, 'RC-5501', 'RC-5501', 'RC-5501'];
+    const fromActors = [null, 'MW-4421', rp.id, kb.id, kb.id, 'RC-5501'];
+
+    for (let s = 0; s <= stageIdx; s++) {
+      const txTime = new Date(new Date(createdAt).getTime() + s * 3600000).toISOString();
+      run(`INSERT INTO transactions (id,batch_id,from_actor,to_actor,stage,weight_kg,location,tx_hash,block_number,gas_used,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [uuid(), batchId, fromActors[s]||null, toActors[s]||'SYSTEM', STAGES[s],
+         totalW, city, genTxHash(), 4000000+Math.floor(Math.random()*1000000),
+         21000+Math.floor(Math.random()*50000), txTime]);
+    }
+    batchCount++;
+  }
+  console.log(`✓ ${batchCount} batches`);
+
+  // Lots
+  let lotCount = 0;
+  kabadiwalas.forEach(kb => {
+    MATERIALS.slice(0, 3).forEach(mat => {
+      const grade = ['A','B','C'][Math.floor(Math.random()*3)];
+      const qty   = Math.floor(Math.random()*500)+50;
+      const price = PRICES[mat] + Math.floor(Math.random()*4) - 2;
+      run('INSERT INTO lots (id,kabadiwala_id,material,quantity_kg,price_per_kg,grade,city) VALUES (?,?,?,?,?,?,?)',
+        [genLotId(kb.city), kb.id, mat, qty, price, grade, kb.city]);
+      lotCount++;
+    });
+  });
+  console.log(`✓ ${lotCount} market lots`);
+  console.log('✅ Seed complete!');
+  process.exit(0);
+}
+
+seed().catch(err => { console.error(err); process.exit(1); });
