@@ -1,45 +1,13 @@
-const initSqlJs = require('sql.js');
-const path = require('path');
-const fs = require('fs');
+const { Pool } = require('pg');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../data/traceflow.db');
-const dir = path.dirname(DB_PATH);
-if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-let _db = null;
-
-// sql.js is async to init, so we expose a promise and a sync accessor
-// We initialise once at startup and persist to disk on every write
-let _ready = null;
-
-function getDb() {
-  if (!_db) throw new Error('DB not initialised — call initDb() first');
-  return _db;
-}
-
+// ── SCHEMA ────────────────────────────────────────────────────────────────────
 async function initDb() {
-  if (_db) return _db;
-  const SQL = await initSqlJs();
-  if (fs.existsSync(DB_PATH)) {
-    const buf = fs.readFileSync(DB_PATH);
-    _db = new SQL.Database(buf);
-  } else {
-    _db = new SQL.Database();
-  }
-  _db.run('PRAGMA foreign_keys = ON;');
-  createSchema();
-  persist();
-  return _db;
-}
-
-function persist() {
-  if (!_db) return;
-  const data = _db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
-}
-
-function createSchema() {
-  _db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS workers (
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,
@@ -47,26 +15,29 @@ function createSchema() {
       city        TEXT NOT NULL,
       phone       TEXT,
       reputation  INTEGER DEFAULT 80,
-      joined_at   TEXT DEFAULT (datetime('now')),
+      joined_at   TIMESTAMPTZ DEFAULT NOW(),
       active      INTEGER DEFAULT 1
     );
+
     CREATE TABLE IF NOT EXISTS batches (
       id            TEXT PRIMARY KEY,
       city          TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'generated',
       total_weight  REAL DEFAULT 0,
-      created_at    TEXT DEFAULT (datetime('now')),
-      updated_at    TEXT DEFAULT (datetime('now'))
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS batch_materials (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      batch_id    TEXT NOT NULL,
+      id          SERIAL PRIMARY KEY,
+      batch_id    TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
       material    TEXT NOT NULL,
       weight_kg   REAL NOT NULL
     );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id            TEXT PRIMARY KEY,
-      batch_id      TEXT NOT NULL,
+      batch_id      TEXT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
       from_actor    TEXT,
       to_actor      TEXT NOT NULL,
       stage         TEXT NOT NULL,
@@ -75,67 +46,79 @@ function createSchema() {
       tx_hash       TEXT NOT NULL,
       block_number  INTEGER,
       gas_used      INTEGER,
-      created_at    TEXT DEFAULT (datetime('now'))
+      created_at    TIMESTAMPTZ DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS lots (
       id            TEXT PRIMARY KEY,
-      kabadiwala_id TEXT NOT NULL,
+      kabadiwala_id TEXT NOT NULL REFERENCES workers(id),
       material      TEXT NOT NULL,
       quantity_kg   REAL NOT NULL,
       price_per_kg  REAL NOT NULL,
       grade         TEXT NOT NULL,
       city          TEXT NOT NULL,
       status        TEXT DEFAULT 'available',
-      created_at    TEXT DEFAULT (datetime('now'))
+      created_at    TIMESTAMPTZ DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS orders (
       id          TEXT PRIMARY KEY,
-      lot_id      TEXT NOT NULL,
-      buyer_id    TEXT NOT NULL,
+      lot_id      TEXT NOT NULL REFERENCES lots(id),
+      buyer_id    TEXT NOT NULL REFERENCES workers(id),
       status      TEXT DEFAULT 'pending',
-      created_at  TEXT DEFAULT (datetime('now'))
+      created_at  TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE INDEX IF NOT EXISTS idx_batches_status ON batches(status);
+    CREATE INDEX IF NOT EXISTS idx_batches_city   ON batches(city);
+    CREATE INDEX IF NOT EXISTS idx_tx_batch       ON transactions(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_lots_status    ON lots(status);
   `);
+  console.log('✓ DB schema ready');
 }
 
-// Helper: run a query and return all rows as objects
-function all(sql, params = []) {
-  const stmt = _db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+
+// Returns all rows for a query
+async function all(sql, params = []) {
+  const { rows } = await pool.query(sql, params);
   return rows;
 }
 
-// Helper: run a query and return first row
-function get(sql, params = []) {
-  const rows = all(sql, params);
+// Returns first row or null
+async function get(sql, params = []) {
+  const { rows } = await pool.query(sql, params);
   return rows[0] || null;
 }
 
-let _inTransaction = false;
-
-// Helper: run a write query, persist to disk (skip persist if inside transaction)
-function run(sql, params = []) {
-  _db.run(sql, params);
-  if (!_inTransaction) persist();
+// Runs a write query, returns result
+async function run(sql, params = []) {
+  const result = await pool.query(sql, params);
+  return result;
 }
 
-// Helper: run multiple statements in a transaction
-function transaction(fn) {
-  _db.run('BEGIN');
-  _inTransaction = true;
+// Runs multiple queries in a transaction
+async function transaction(fn) {
+  const client = await pool.connect();
   try {
-    fn();
-    _db.run('COMMIT');
+    await client.query('BEGIN');
+    await fn(client);
+    await client.query('COMMIT');
   } catch (e) {
-    try { _db.run('ROLLBACK'); } catch(_) {}
+    await client.query('ROLLBACK');
     throw e;
   } finally {
-    _inTransaction = false;
+    client.release();
   }
-  persist();
 }
 
-module.exports = { initDb, getDb, all, get, run, transaction, persist };
+// Thin wrapper so transaction callbacks can use same all/get/run API
+function clientQuery(client) {
+  return {
+    run: (sql, params) => client.query(sql, params),
+    get: async (sql, params) => { const { rows } = await client.query(sql, params); return rows[0] || null; },
+    all: async (sql, params) => { const { rows } = await client.query(sql, params); return rows; },
+  };
+}
+
+module.exports = { initDb, all, get, run, transaction, clientQuery, pool };

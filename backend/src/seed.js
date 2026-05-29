@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { initDb, run, all } = require('./db');
+const { initDb, run, all, transaction, clientQuery } = require('./db');
 const { genBatchId, genLotId, genTxHash, uuid } = require('./helpers');
 
 const CITIES    = ['Mumbai','Delhi','Bengaluru','Chennai','Hyderabad','Pune','Ahmedabad','Kolkata'];
@@ -27,58 +27,57 @@ const WORKERS = [
 ];
 
 async function seed() {
-  // allow calling from index.js without exiting the process
   const calledExternally = require.main === module;
   await initDb();
-  console.log('🌱 Seeding TraceFlow database...');
+  console.log('🌱 Seeding...');
 
-  // Clear
-  run('DELETE FROM orders');
-  run('DELETE FROM lots');
-  run('DELETE FROM transactions');
-  run('DELETE FROM batch_materials');
-  run('DELETE FROM batches');
-  run('DELETE FROM workers');
+  // Clear in dependency order
+  await run('DELETE FROM orders');
+  await run('DELETE FROM lots');
+  await run('DELETE FROM transactions');
+  await run('DELETE FROM batch_materials');
+  await run('DELETE FROM batches');
+  await run('DELETE FROM workers');
 
   // Workers
-  WORKERS.forEach(w =>
-    run('INSERT INTO workers (id,name,role,city,phone,reputation) VALUES (?,?,?,?,?,?)',
-      [w.id, w.name, w.role, w.city, w.phone, w.reputation]));
+  for (const w of WORKERS)
+    await run('INSERT INTO workers (id,name,role,city,phone,reputation) VALUES ($1,$2,$3,$4,$5,$6)',
+      [w.id,w.name,w.role,w.city,w.phone,w.reputation]);
   console.log(`✓ ${WORKERS.length} workers`);
 
-  // Batches
   const ragpickers  = WORKERS.filter(w => w.role === 'ragpicker');
   const kabadiwalas = WORKERS.filter(w => w.role === 'kabadiwala');
+
+  // Batches
   let batchCount = 0;
-
   for (let i = 0; i < 80; i++) {
-    const city      = CITIES[i % CITIES.length];
-    const stageIdx  = Math.floor(Math.random() * STAGES.length);
-    const status    = STAGES[stageIdx];
-    const mats      = MATERIALS.slice(0, Math.floor(Math.random()*3)+1)
-                        .map(m => ({ material: m, weight_kg: parseFloat((Math.random()*10+1).toFixed(1)) }));
-    const totalW    = parseFloat(mats.reduce((s,m)=>s+m.weight_kg,0).toFixed(1));
-    const daysAgo   = Math.floor(Math.random() * 30);
+    const city     = CITIES[i % CITIES.length];
+    const stageIdx = Math.floor(Math.random() * STAGES.length);
+    const status   = STAGES[stageIdx];
+    const mats     = MATERIALS.slice(0, Math.floor(Math.random()*3)+1)
+                       .map(m => ({ material: m, weight_kg: parseFloat((Math.random()*10+1).toFixed(1)) }));
+    const totalW   = parseFloat(mats.reduce((s,m)=>s+m.weight_kg,0).toFixed(1));
+    const daysAgo  = Math.floor(Math.random() * 30);
     const createdAt = new Date(Date.now() - daysAgo * 86400000).toISOString();
-    const batchId   = genBatchId(city);
+    const batchId  = genBatchId(city);
 
-    run('INSERT INTO batches (id,city,status,total_weight,created_at,updated_at) VALUES (?,?,?,?,?,?)',
-      [batchId, city, status, totalW, createdAt, createdAt]);
-    mats.forEach(m =>
-      run('INSERT INTO batch_materials (batch_id,material,weight_kg) VALUES (?,?,?)', [batchId, m.material, m.weight_kg]));
+    await run('INSERT INTO batches (id,city,status,total_weight,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [batchId,city,status,totalW,createdAt,createdAt]);
+    for (const m of mats)
+      await run('INSERT INTO batch_materials (batch_id,material,weight_kg) VALUES ($1,$2,$3)', [batchId,m.material,m.weight_kg]);
 
-    const rp = ragpickers.find(w => w.city === city) || ragpickers[0];
-    const kb = kabadiwalas.find(w => w.city === city) || kabadiwalas[0];
-    const toActors   = ['MW-4421', rp.id, kb.id, 'RC-5501', 'RC-5501', 'RC-5501'];
-    const fromActors = [null, 'MW-4421', rp.id, kb.id, kb.id, 'RC-5501'];
+    const rp = ragpickers.find(w=>w.city===city) || ragpickers[0];
+    const kb = kabadiwalas.find(w=>w.city===city) || kabadiwalas[0];
+    const toActors   = ['MW-4421',rp.id,kb.id,'RC-5501','RC-5501','RC-5501'];
+    const fromActors = [null,'MW-4421',rp.id,kb.id,kb.id,'RC-5501'];
 
     for (let s = 0; s <= stageIdx; s++) {
-      const txTime = new Date(new Date(createdAt).getTime() + s * 3600000).toISOString();
-      run(`INSERT INTO transactions (id,batch_id,from_actor,to_actor,stage,weight_kg,location,tx_hash,block_number,gas_used,created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [uuid(), batchId, fromActors[s]||null, toActors[s]||'SYSTEM', STAGES[s],
-         totalW, city, genTxHash(), 4000000+Math.floor(Math.random()*1000000),
-         21000+Math.floor(Math.random()*50000), txTime]);
+      const txTime = new Date(new Date(createdAt).getTime() + s*3600000).toISOString();
+      await run(`INSERT INTO transactions (id,batch_id,from_actor,to_actor,stage,weight_kg,location,tx_hash,block_number,gas_used,created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [uuid(),batchId,fromActors[s]||null,toActors[s]||'SYSTEM',STAGES[s],
+         totalW,city,genTxHash(),4000000+Math.floor(Math.random()*1000000),
+         21000+Math.floor(Math.random()*50000),txTime]);
     }
     batchCount++;
   }
@@ -86,24 +85,23 @@ async function seed() {
 
   // Lots
   let lotCount = 0;
-  kabadiwalas.forEach(kb => {
-    MATERIALS.slice(0, 3).forEach(mat => {
+  for (const kb of kabadiwalas) {
+    for (const mat of MATERIALS.slice(0,3)) {
       const grade = ['A','B','C'][Math.floor(Math.random()*3)];
       const qty   = Math.floor(Math.random()*500)+50;
       const price = PRICES[mat] + Math.floor(Math.random()*4) - 2;
-      run('INSERT INTO lots (id,kabadiwala_id,material,quantity_kg,price_per_kg,grade,city) VALUES (?,?,?,?,?,?,?)',
-        [genLotId(kb.city), kb.id, mat, qty, price, grade, kb.city]);
+      await run('INSERT INTO lots (id,kabadiwala_id,material,quantity_kg,price_per_kg,grade,city) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [genLotId(kb.city),kb.id,mat,qty,price,grade,kb.city]);
       lotCount++;
-    });
-  });
-  console.log(`✓ ${lotCount} market lots`);
+    }
+  }
+  console.log(`✓ ${lotCount} lots`);
   console.log('✅ Seed complete!');
   if (calledExternally) process.exit(0);
 }
 
 module.exports = { run: seed };
 
-// Only auto-run when called directly: node src/seed.js
 if (require.main === module) {
   seed().catch(err => { console.error(err); process.exit(1); });
 }
