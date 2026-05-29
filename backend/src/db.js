@@ -8,6 +8,16 @@ const pool = new Pool({
 // ── SCHEMA ────────────────────────────────────────────────────────────────────
 async function initDb() {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id          TEXT PRIMARY KEY,
+      email       TEXT UNIQUE NOT NULL,
+      password    TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      role        TEXT NOT NULL,
+      worker_id   TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS workers (
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,

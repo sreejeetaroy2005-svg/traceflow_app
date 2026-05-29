@@ -17,6 +17,7 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+app.use('/api/auth',         require('./routes/auth'));
 app.use('/api/workers',      require('./routes/workers'));
 app.use('/api/batches',      require('./routes/batches'));
 app.use('/api/transactions', require('./routes/transactions'));

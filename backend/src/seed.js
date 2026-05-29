@@ -31,19 +31,36 @@ async function seed() {
   await initDb();
   console.log('🌱 Seeding...');
 
-  // Clear in dependency order
   await run('DELETE FROM orders');
   await run('DELETE FROM lots');
   await run('DELETE FROM transactions');
   await run('DELETE FROM batch_materials');
   await run('DELETE FROM batches');
   await run('DELETE FROM workers');
+  await run('DELETE FROM users');
 
   // Workers
   for (const w of WORKERS)
     await run('INSERT INTO workers (id,name,role,city,phone,reputation) VALUES ($1,$2,$3,$4,$5,$6)',
       [w.id,w.name,w.role,w.city,w.phone,w.reputation]);
   console.log(`✓ ${WORKERS.length} workers`);
+
+  // Demo users (pre-hashed passwords for speed)
+  const bcrypt = require('bcryptjs');
+  const { v4: uuidv4 } = require('uuid');
+  const DEMO_USERS = [
+    { email:'admin@traceflow.in',    password:'admin123',    name:'Ankit Kumar',      role:'admin',      worker_id:null },
+    { email:'ragpicker@traceflow.in',password:'demo123',     name:'Sunita Devi',      role:'ragpicker',  worker_id:'RP-8834' },
+    { email:'kabadiwala@traceflow.in',password:'demo123',    name:'Mohan Sharma',     role:'kabadiwala', worker_id:'KB-1122' },
+    { email:'municipal@traceflow.in', password:'demo123',    name:'Ramesh Patil',     role:'municipal',  worker_id:'MW-4421' },
+    { email:'industry@traceflow.in',  password:'demo123',    name:'GreenCycle Ltd',   role:'industry',   worker_id:'RC-5501' },
+  ];
+  for (const u of DEMO_USERS) {
+    const hash = await bcrypt.hash(u.password, 10);
+    await run('INSERT INTO users (id,email,password,name,role,worker_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [uuidv4(), u.email, hash, u.name, u.role, u.worker_id]);
+  }
+  console.log(`✓ ${DEMO_USERS.length} demo users`);
 
   const ragpickers  = WORKERS.filter(w => w.role === 'ragpicker');
   const kabadiwalas = WORKERS.filter(w => w.role === 'kabadiwala');

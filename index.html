@@ -151,6 +151,34 @@ h1,h2,h3,h4,h5,h6{font-family:'Space Grotesk',sans-serif}
 </head>
 <body>
 
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg-base);z-index:10000;display:flex;align-items:center;justify-content:center">
+  <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:16px;padding:2.5rem;width:100%;max-width:400px;box-shadow:0 24px 80px rgba(0,0,0,.5)">
+    <div style="text-align:center;margin-bottom:2rem">
+      <div style="font-size:2rem;margin-bottom:.5rem">♻</div>
+      <h1 style="font-size:1.5rem;color:var(--amber);margin-bottom:.25rem">TraceFlow</h1>
+      <p style="color:var(--text-secondary);font-size:.85rem">Waste Intelligence Network</p>
+    </div>
+    <div id="login-error" style="display:none;background:rgba(248,113,113,.1);border:1px solid var(--red);border-radius:7px;padding:.6rem .9rem;font-size:.8rem;color:var(--red);margin-bottom:1rem"></div>
+    <div class="form-group"><label class="form-label">Email</label>
+      <input class="form-input" id="login-email" type="email" placeholder="admin@traceflow.in" value="admin@traceflow.in">
+    </div>
+    <div class="form-group"><label class="form-label">Password</label>
+      <input class="form-input" id="login-password" type="password" placeholder="••••••••" value="admin123">
+    </div>
+    <button class="btn btn-amber" id="login-btn" style="width:100%;justify-content:center;margin-top:.5rem;font-size:.95rem;padding:.75rem" onclick="doLogin()">Sign In</button>
+    <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.5rem;text-align:center">DEMO ACCOUNTS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem">
+        <button onclick="fillLogin('admin@traceflow.in','admin123')" style="background:var(--bg-base);border:1px solid var(--border);color:var(--text-secondary);padding:.35rem .5rem;border-radius:5px;font-size:.72rem;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--amber)'" onmouseout="this.style.borderColor='var(--border)'">Admin</button>
+        <button onclick="fillLogin('ragpicker@traceflow.in','demo123')" style="background:var(--bg-base);border:1px solid var(--border);color:var(--text-secondary);padding:.35rem .5rem;border-radius:5px;font-size:.72rem;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border)'">Ragpicker</button>
+        <button onclick="fillLogin('kabadiwala@traceflow.in','demo123')" style="background:var(--bg-base);border:1px solid var(--border);color:var(--text-secondary);padding:.35rem .5rem;border-radius:5px;font-size:.72rem;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--amber)'" onmouseout="this.style.borderColor='var(--border)'">Kabadiwala</button>
+        <button onclick="fillLogin('industry@traceflow.in','demo123')" style="background:var(--bg-base);border:1px solid var(--border);color:var(--text-secondary);padding:.35rem .5rem;border-radius:5px;font-size:.72rem;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--purple)'" onmouseout="this.style.borderColor='var(--border)'">Industry</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- LOADER -->
 <div id="loader">
   <div class="loader-logo">♻ TraceFlow</div>
@@ -667,7 +695,9 @@ document.querySelectorAll('.sb-item').forEach(item => {
 function navigateTo(page) {
   document.querySelectorAll('.sb-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-'+page));
-  document.getElementById('page-title').textContent = PAGE_TITLES[page];
+  document.getElementById('page-title').textContent = CURRENT_USER
+    ? `${PAGE_TITLES[page]} · ${CURRENT_USER.role}`
+    : PAGE_TITLES[page];
   currentPage = page;
   if(page==='analytics') setTimeout(drawAllCharts,100);
   if(page==='network') setTimeout(drawNetworkMap,100);
@@ -678,29 +708,95 @@ function navigateTo(page) {
 // ─── API LAYER ────────────────────────────────────────────────────────────────
 const API_BASE = 'https://traceflow-app.onrender.com';
 let API_ONLINE = false;
+let AUTH_TOKEN = localStorage.getItem('tf_token') || null;
+let CURRENT_USER = JSON.parse(localStorage.getItem('tf_user') || 'null');
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+function fillLogin(email, pass) {
+  document.getElementById('login-email').value = email;
+  document.getElementById('login-password').value = pass;
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  const btn   = document.getElementById('login-btn');
+  const err   = document.getElementById('login-error');
+  err.style.display = 'none';
+  btn.textContent = 'Signing in...'; btn.disabled = true;
+  try {
+    const r = await fetch(API_BASE + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Login failed');
+    AUTH_TOKEN = data.token;
+    CURRENT_USER = data.user;
+    localStorage.setItem('tf_token', AUTH_TOKEN);
+    localStorage.setItem('tf_user', JSON.stringify(CURRENT_USER));
+    document.getElementById('login-screen').style.display = 'none';
+    applyUserContext();
+    showToast(`Welcome back, ${CURRENT_USER.name}`, 'success');
+  } catch(e) {
+    err.textContent = e.message; err.style.display = 'block';
+  } finally {
+    btn.textContent = 'Sign In'; btn.disabled = false;
+  }
+}
+
+function doLogout() {
+  AUTH_TOKEN = null; CURRENT_USER = null;
+  localStorage.removeItem('tf_token'); localStorage.removeItem('tf_user');
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function applyUserContext() {
+  if (!CURRENT_USER) return;
+  // Update avatar and name in topbar
+  const av = document.querySelector('.tb-avatar');
+  if (av) {
+    const initials = CURRENT_USER.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    av.textContent = initials;
+    av.title = `${CURRENT_USER.name} — ${CURRENT_USER.role}`;
+    av.onclick = doLogout;
+    av.style.cursor = 'pointer';
+    av.title += ' (click to logout)';
+  }
+  const title = document.querySelector('.tb-title');
+  if (title) title.textContent = `${PAGE_TITLES[currentPage]} · ${CURRENT_USER.role}`;
+}
+
+// Check if already logged in on load
+if (AUTH_TOKEN && CURRENT_USER) {
+  document.getElementById('login-screen').style.display = 'none';
+}
+
+// Enter key on password field
+document.addEventListener('DOMContentLoaded', () => {
+  const pw = document.getElementById('login-password');
+  if (pw) pw.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+});
 
 async function apiFetch(path) {
   try {
-    const r = await fetch(API_BASE + path);
+    const headers = {};
+    if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+    const r = await fetch(API_BASE + path, { headers });
     if (!r.ok) throw new Error(r.status);
     return await r.json();
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 async function apiPost(path, body) {
   try {
-    const r = await fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const headers = { 'Content-Type': 'application/json' };
+    if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+    const r = await fetch(API_BASE + path, { method:'POST', headers, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(r.status);
     return await r.json();
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 async function checkApi() {
@@ -718,6 +814,7 @@ window.addEventListener('load', async () => {
   await checkApi();
   setTimeout(() => {
     document.getElementById('loader').classList.add('hidden');
+    applyUserContext();
     initOverview();
     initTracker();
     initStakeholders();
