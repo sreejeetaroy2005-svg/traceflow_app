@@ -138,22 +138,6 @@ FRONTEND_URL=http://localhost:5500
 
 ---
 
-## Deploy
-
-**Frontend** → Vercel (auto-deploys on push to `main`)
-
-**Backend** → Render:
-- Root directory: `backend`
-- Build command: `npm install`
-- Start command: `node src/index.js`
-- Env vars: `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV=production`, `FRONTEND_URL`
-
-**Database** → Neon (free PostgreSQL, persistent across deploys)
-
-On first startup the backend auto-seeds the database if empty.
-
----
-
 ## Roadmap
 
 - [ ] Role-specific dashboards (ragpicker sees only their batches, etc.)
