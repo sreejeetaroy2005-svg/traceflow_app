@@ -27,6 +27,8 @@ const WORKERS = [
 ];
 
 async function seed() {
+  // allow calling from index.js without exiting the process
+  const calledExternally = require.main === module;
   await initDb();
   console.log('🌱 Seeding TraceFlow database...');
 
@@ -96,7 +98,12 @@ async function seed() {
   });
   console.log(`✓ ${lotCount} market lots`);
   console.log('✅ Seed complete!');
-  process.exit(0);
+  if (calledExternally) process.exit(0);
 }
 
-seed().catch(err => { console.error(err); process.exit(1); });
+module.exports = { run: seed };
+
+// Only auto-run when called directly: node src/seed.js
+if (require.main === module) {
+  seed().catch(err => { console.error(err); process.exit(1); });
+}

@@ -41,8 +41,15 @@ app.get('/api', (_req, res) => res.json({
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: err.message }); });
 
-// Init DB first, then start server
-initDb().then(() => {
+// Init DB, auto-seed if empty, then start server
+initDb().then(async () => {
+  const { all } = require('./db');
+  const count = (all('SELECT COUNT(*) as c FROM workers')[0] || {}).c || 0;
+  if (count === 0) {
+    console.log('Empty DB — seeding...');
+    await require('./seed').run();
+    console.log('Seed done.');
+  }
   app.listen(PORT, () => {
     console.log(`\n🚀 TraceFlow API → http://localhost:${PORT}`);
     console.log(`📖 Docs         → http://localhost:${PORT}/api`);
