@@ -2,7 +2,7 @@
 
 Blockchain-powered, AI-assisted waste traceability platform for India's informal recycling ecosystem. Built as a full-stack hackathon demo with a live backend and real persistent data.
 
-**Live Demo:** [traceflow.vercel.app](https://traceflow-app-s6n5.vercel.app/)
+**Live Demo:** [traceflow.vercel.app https://traceflow-app-s6n5.vercel.app/
 **API:** [traceflow-app.onrender.com](https://traceflow-app.onrender.com/api)
 
 ---
