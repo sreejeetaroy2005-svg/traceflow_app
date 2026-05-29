@@ -165,4 +165,4 @@ On first startup the backend auto-seeds the database if empty.
 
 ---
 
-Built for [Hackathon Name] · Team [Team Name]
+extra material:https://drive.google.com/drive/folders/1MeNhRxbojYZRf3bPXiYVkhn_27Li5C6t
